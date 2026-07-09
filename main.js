@@ -25,6 +25,8 @@ const TAG_STYLE_INTERNAL_LINKS_CLASS = 'mic-tag-style-internal-links';
 const TAG_STYLE_EXTERNAL_LINKS_CLASS = 'mic-tag-style-external-links';
 const TAG_STYLE_FILE_EXPLORER_CLASS = 'mic-tag-style-file-explorer';
 const TAG_STYLE_LIVE_PREVIEW_CLASS = 'mic-tag-style-live-preview-links';
+const TAG_STYLE_PROPERTY_VALUES_CLASS = 'mic-tag-style-property-values';
+const PROPERTY_VALUE_ATTR = 'data-mic-property-value';
 
 const DEFAULT_SETTINGS = {
   iconSearchPaths: [
@@ -38,17 +40,20 @@ const DEFAULT_SETTINGS = {
   folderRules: [],
   fileRules: [],
   externalLinkRules: [],
+  propertyValueRules: [],
   enableFileExplorer: true,
   enableTabHeaders: true,
   enableReadingViewLinks: true,
   enableLivePreviewLinks: false,
   enableGenericInternalLinks: true,
+  enablePropertyValues: true,
   enableShortenInternalLinks: true,
   enableShortenTags: true,
   enableTagStyleInternalLinks: true,
   enableTagStyleExternalLinks: true,
   enableTagStyleFileExplorer: true,
   enableTagStyleLivePreviewLinks: true,
+  enableTagStylePropertyValues: true,
   tagBackgroundOpacity: 28,
 };
 
@@ -185,6 +190,47 @@ function cleanExternalLinkRule(rule) {
   const prefix = String(sourceRule.prefix || sourceRule.urlPrefix || '').trim();
   const iconSource = normalizeIconSource(sourceRule);
   const nextRule = { prefix };
+
+  if (sourceRule.icon) {
+    nextRule.iconSource = iconSource;
+    nextRule.icon = String(sourceRule.icon).trim();
+  }
+  if (sourceRule.textColor) nextRule.textColor = String(sourceRule.textColor).trim();
+  if (sourceRule.backgroundColor) {
+    nextRule.backgroundColor = String(sourceRule.backgroundColor).trim();
+  } else if (sourceRule.textColor) {
+    nextRule.backgroundColor = String(sourceRule.textColor).trim();
+  }
+
+  return nextRule;
+}
+
+function normalizePropertyName(value) {
+  return String(value || '').trim();
+}
+
+function normalizePropertyNameKey(value) {
+  return normalizePropertyName(value).toLowerCase();
+}
+
+function normalizePropertyValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizePropertyValueKey(value) {
+  return normalizePropertyValue(value).toLowerCase();
+}
+
+function propertyValueRuleKey(propertyName, value) {
+  return `${normalizePropertyNameKey(propertyName)}\u0000${normalizePropertyValueKey(value)}`;
+}
+
+function cleanPropertyValueRule(rule) {
+  const sourceRule = rule || {};
+  const property = normalizePropertyName(sourceRule.property || sourceRule.propertyName || sourceRule.key);
+  const value = normalizePropertyValue(sourceRule.value);
+  const iconSource = normalizeIconSource(sourceRule);
+  const nextRule = { property, value };
 
   if (sourceRule.icon) {
     nextRule.iconSource = iconSource;
@@ -415,6 +461,8 @@ class StyleIndex {
     this.directByFolderPath = new Map();
     this.cascadingFolderStyles = [];
     this.externalPrefixStyles = [];
+    this.propertyValueStyles = new Map();
+    this.globalPropertyValueStyles = new Map();
   }
 
   setSettings(settings) {
@@ -426,6 +474,8 @@ class StyleIndex {
     this.directByFolderPath.clear();
     this.cascadingFolderStyles = [];
     this.externalPrefixStyles = [];
+    this.propertyValueStyles.clear();
+    this.globalPropertyValueStyles.clear();
 
     await this.addSettingsRules();
     this.cascadingFolderStyles.sort((a, b) => b.targetPath.length - a.targetPath.length);
@@ -440,6 +490,9 @@ class StyleIndex {
     await this.addPathRules(fileRules, 'file');
     await this.addExternalLinkRules(Array.isArray(this.settings.externalLinkRules)
       ? this.settings.externalLinkRules
+      : []);
+    await this.addPropertyValueRules(Array.isArray(this.settings.propertyValueRules)
+      ? this.settings.propertyValueRules
       : []);
   }
 
@@ -494,6 +547,34 @@ class StyleIndex {
     }
   }
 
+  async addPropertyValueRules(rules) {
+    for (const rawRule of rules) {
+      const rule = cleanPropertyValueRule(rawRule);
+      if (!rule.value) continue;
+
+      const targetPath = rule.property
+        ? `${rule.property}: ${rule.value}`
+        : rule.value;
+      const style = await this.buildStyleFromRule({ ...rule, type: 'property-value' }, targetPath);
+      if (!style) continue;
+
+      const nextStyle = {
+        ...style,
+        property: rule.property,
+        value: rule.value,
+        targetPath,
+        rulePath: targetPath,
+        ruleType: 'property-value',
+      };
+
+      if (rule.property) {
+        this.propertyValueStyles.set(propertyValueRuleKey(rule.property, rule.value), nextStyle);
+      } else {
+        this.globalPropertyValueStyles.set(normalizePropertyValueKey(rule.value), nextStyle);
+      }
+    }
+  }
+
   async buildStyleFromRule(rule, targetPath) {
     const icon = rule.icon ? String(rule.icon) : undefined;
     const iconSource = normalizeIconSource(rule);
@@ -537,6 +618,16 @@ class StyleIndex {
   getDirectStyleForExternalPrefix(prefix) {
     const normalized = String(prefix || '').trim();
     return this.externalPrefixStyles.find((style) => style.prefix === normalized) || null;
+  }
+
+  getEffectiveStyleForPropertyValue(propertyName, value) {
+    const normalizedValue = normalizePropertyValue(value);
+    if (!normalizedValue) return null;
+
+    const exact = this.propertyValueStyles.get(propertyValueRuleKey(propertyName, normalizedValue));
+    if (exact) return exact;
+
+    return this.globalPropertyValueStyles.get(normalizePropertyValueKey(normalizedValue)) || null;
   }
 
   getEffectiveStyleForPath(path) {
@@ -999,6 +1090,39 @@ class MarkdownLinkRenderer {
     this.applyIcon(linkEl, style);
   }
 
+  applyToPropertyValue(valueEl, propertyName, valueText) {
+    const value = normalizePropertyValue(valueText);
+    if (!value) {
+      this.clearPropertyValue(valueEl);
+      return;
+    }
+
+    const style = this.styleIndex.getEffectiveStyleForPropertyValue(propertyName, value);
+    if (style) {
+      valueEl.setAttribute(PROPERTY_VALUE_ATTR, 'true');
+      valueEl.setAttribute('data-mic-property-name', propertyName || '');
+      valueEl.setAttribute('data-mic-property-raw-value', value);
+    } else {
+      valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
+      valueEl.removeAttribute('data-mic-property-name');
+      valueEl.removeAttribute('data-mic-property-raw-value');
+    }
+
+    this.applyStyleVariables(valueEl, style);
+    this.applyIcon(valueEl, style);
+  }
+
+  clearPropertyValue(valueEl) {
+    valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
+    valueEl.removeAttribute('data-mic-property-name');
+    valueEl.removeAttribute('data-mic-property-raw-value');
+    valueEl.classList.remove(COLORED_TEXT_CLASS);
+    valueEl.style.removeProperty('--mic-text-color');
+    applyBackgroundVariables(valueEl, null);
+    const existing = valueEl.querySelector(`:scope > .${ICON_CLASS}.${LINK_ICON_CLASS}`);
+    if (existing) existing.remove();
+  }
+
   markExternalLinkContainer(linkEl, active) {
     const containerEl = linkEl.closest('.metadata-property-value, .metadata-property-value-container, .metadata-property');
     if (!containerEl) return;
@@ -1104,6 +1228,9 @@ class MarkdownLinkRenderer {
     rootEl.querySelectorAll('[data-mic-external-link-container="true"]').forEach((el) => {
       el.removeAttribute('data-mic-external-link-container');
     });
+    rootEl.querySelectorAll(`[${PROPERTY_VALUE_ATTR}="true"]`).forEach((el) => {
+      this.clearPropertyValue(el);
+    });
   }
 }
 
@@ -1124,7 +1251,7 @@ class GenericInternalLinkRenderer {
     if (this.observer) return;
 
     this.observer = new MutationObserver(() => {
-      if (this.settings.enableGenericInternalLinks) this.scheduleRefresh();
+      if (this.settings.enableGenericInternalLinks || this.settings.enablePropertyValues) this.scheduleRefresh();
     });
 
     this.observer.observe(document.body, { childList: true, subtree: true });
@@ -1140,21 +1267,31 @@ class GenericInternalLinkRenderer {
   }
 
   refresh() {
-    if (!this.settings.enableGenericInternalLinks) {
+    if (!this.settings.enableGenericInternalLinks && !this.settings.enablePropertyValues) {
       this.clearAll();
       return;
     }
 
     const sourcePath = this.app.workspace.getActiveFile() ? this.app.workspace.getActiveFile().path : '';
 
-    this.getInternalLinkCandidates().forEach((linkEl) => {
-      if (this.settings.enableShortenInternalLinks) shortenRenderedInternalLink(linkEl);
-      this.markdownLinkRenderer.applyToInternalLink(linkEl, sourcePath);
-    });
+    if (this.settings.enableGenericInternalLinks) {
+      this.getInternalLinkCandidates().forEach((linkEl) => {
+        if (this.settings.enableShortenInternalLinks) shortenRenderedInternalLink(linkEl);
+        this.markdownLinkRenderer.applyToInternalLink(linkEl, sourcePath);
+      });
 
-    document.querySelectorAll('a.external-link[href], a[href], [data-href], [data-url], .metadata-container [aria-label], .metadata-container [title], .metadata-properties [aria-label], .metadata-properties [title]').forEach((linkEl) => {
-      this.markdownLinkRenderer.applyToExternalLink(linkEl);
-    });
+      document.querySelectorAll('a.external-link[href], a[href], [data-href], [data-url], .metadata-container [aria-label], .metadata-container [title], .metadata-properties [aria-label], .metadata-properties [title]').forEach((linkEl) => {
+        this.markdownLinkRenderer.applyToExternalLink(linkEl);
+      });
+    }
+
+    if (this.settings.enablePropertyValues) {
+      this.getPropertyValueCandidates().forEach(({ element, propertyName, value }) => {
+        this.markdownLinkRenderer.applyToPropertyValue(element, propertyName, value);
+      });
+    } else {
+      this.clearPropertyValues();
+    }
   }
 
   getInternalLinkCandidates() {
@@ -1167,6 +1304,144 @@ class GenericInternalLinkRenderer {
 
     return [...new Set([...document.querySelectorAll(selectors.join(', '))])]
       .filter((linkEl) => this.markdownLinkRenderer.getLinkpath(linkEl));
+  }
+
+  getPropertyValueCandidates() {
+    const candidates = [];
+
+    document.querySelectorAll('.metadata-property').forEach((propertyEl) => {
+      const propertyName = this.getMetadataPropertyName(propertyEl);
+      const valueSelectors = [
+        '.metadata-property-value .multi-select-pill',
+        '.metadata-property-value .metadata-link',
+        '.metadata-property-value a.internal-link',
+        '.metadata-property-value a.external-link',
+        '.metadata-property-value [data-href]',
+        '.metadata-property-value .metadata-property-value-text',
+        '.metadata-property-value .metadata-property-value-pill',
+        '.metadata-property-value span:not(.metadata-property-icon):not(.metadata-property-warning-icon)',
+      ];
+
+      propertyEl.querySelectorAll(valueSelectors.join(', ')).forEach((element) => {
+        if (!(element instanceof HTMLElement) || !this.isPropertyValueElement(element)) return;
+        const value = this.extractPropertyValueText(element);
+        if (value) candidates.push({ element, propertyName, value });
+      });
+    });
+
+    const baseSelectors = [
+      '.workspace-leaf-content[data-type="bases"] [data-property-key]',
+      '.workspace-leaf-content[data-type="bases"] [data-property]',
+      '.workspace-leaf-content[data-type="bases"] [data-field]',
+      '.workspace-leaf-content[data-type="bases"] td',
+      '.workspace-leaf-content[data-type="bases"] .table-cell',
+      '.workspace-leaf-content[data-type="bases"] .bases-table-cell',
+      '.bases-embed [data-property-key]',
+      '.bases-embed [data-property]',
+      '.bases-embed [data-field]',
+      '.bases-embed td',
+      '.bases-embed .table-cell',
+      '.bases-embed .bases-table-cell',
+      '.bases-view [data-property-key]',
+      '.bases-view [data-property]',
+      '.bases-view [data-field]',
+      '.bases-view td',
+      '.bases-view .table-cell',
+      '.bases-view .bases-table-cell',
+    ];
+
+    document.querySelectorAll(baseSelectors.join(', ')).forEach((element) => {
+      if (!(element instanceof HTMLElement) || !this.isPropertyValueElement(element)) return;
+      const value = this.extractPropertyValueText(element);
+      if (!value) return;
+      candidates.push({
+        element,
+        propertyName: this.getPropertyNameFromContext(element),
+        value,
+      });
+    });
+
+    const seen = new Set();
+    return candidates.filter(({ element }) => {
+      if (seen.has(element)) return false;
+      seen.add(element);
+      return true;
+    });
+  }
+
+  isPropertyValueElement(element) {
+    if (element.matches('input, textarea, select, button, svg, path')) return false;
+    if (element.matches('a, [data-href], [data-url], .internal-link, .external-link, .metadata-link')) return false;
+    if (element.closest('.modal, .suggestion-container, .menu, .prompt, .nav-files-container')) return false;
+    if (element.classList.contains(ICON_CLASS)) return false;
+    if (element.closest(`.${ICON_CLASS}`)) return false;
+    const styledParent = element.parentElement ? element.parentElement.closest(`[${PROPERTY_VALUE_ATTR}="true"]`) : null;
+    if (styledParent) return false;
+    const preferredParent = element.parentElement
+      ? element.parentElement.closest([
+        '.metadata-property-value .multi-select-pill',
+        '.metadata-property-value .metadata-link',
+        '.metadata-property-value a.internal-link',
+        '.metadata-property-value a.external-link',
+        '.metadata-property-value [data-href]',
+      ].join(', '))
+      : null;
+    if (preferredParent && preferredParent !== element) return false;
+    if (element.matches('.metadata-property-key, .metadata-property-key-input, .metadata-property-icon')) return false;
+    return Boolean(this.extractPropertyValueText(element));
+  }
+
+  getMetadataPropertyName(propertyEl) {
+    const attrNames = ['data-property-key', 'data-property', 'data-field', 'data-name'];
+    for (const attrName of attrNames) {
+      const value = propertyEl.getAttribute(attrName);
+      if (value) return normalizePropertyName(value);
+    }
+
+    const keyEl = propertyEl.querySelector('.metadata-property-key-input, .metadata-property-key, [data-property-key]');
+    return keyEl ? normalizePropertyName(this.extractPropertyValueText(keyEl)) : '';
+  }
+
+  getPropertyNameFromContext(element) {
+    const attrNames = ['data-property-key', 'data-property', 'data-field', 'data-column-name', 'data-name'];
+    let current = element;
+    while (current && current instanceof HTMLElement && current !== document.body) {
+      for (const attrName of attrNames) {
+        const value = current.getAttribute(attrName);
+        if (value) return normalizePropertyName(value);
+      }
+      current = current.parentElement;
+    }
+    return '';
+  }
+
+  extractPropertyValueText(element) {
+    if (!element) return '';
+    if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+      return normalizePropertyValue(element.value);
+    }
+
+    const clone = element.cloneNode(true);
+    if (!(clone instanceof HTMLElement)) return normalizePropertyValue(element.textContent);
+
+    clone.querySelectorAll([
+      `.${ICON_CLASS}`,
+      '.multi-select-pill-remove-button',
+      '.metadata-property-value-remove',
+      '.metadata-property-icon',
+      '.metadata-property-warning-icon',
+      '.clickable-icon',
+      'svg',
+    ].join(', ')).forEach((child) => child.remove());
+
+    return normalizePropertyValue(clone.textContent);
+  }
+
+  clearPropertyValues() {
+    document.querySelectorAll(`[${PROPERTY_VALUE_ATTR}="true"]`).forEach((el) => {
+      if (el.closest('.markdown-preview-view')) return;
+      this.markdownLinkRenderer.clearPropertyValue(el);
+    });
   }
 
   clearAll() {
@@ -1184,6 +1459,7 @@ class GenericInternalLinkRenderer {
       if (el.closest('.markdown-preview-view')) return;
       el.removeAttribute('data-mic-external-link-container');
     });
+    this.clearPropertyValues();
   }
 }
 
@@ -1934,6 +2210,146 @@ class ExternalLinkRuleEditModal extends Modal {
   }
 }
 
+class PropertyValueRuleEditModal extends Modal {
+  constructor(app, plugin, rule, onSave) {
+    super(app);
+    this.plugin = plugin;
+    this.rule = cleanPropertyValueRule(rule || {
+      property: '',
+      value: '',
+      iconSource: 'text',
+      icon: '',
+      textColor: '#FFFFFF',
+      backgroundColor: '#FFFFFF',
+    });
+    this.onSave = onSave;
+    this.activeSuggests = [];
+  }
+
+  onOpen() {
+    this.render();
+  }
+
+  onClose() {
+    this.destroySuggests();
+  }
+
+  destroySuggests() {
+    this.activeSuggests.forEach((suggest) => suggest.destroy());
+    this.activeSuggests = [];
+  }
+
+  render() {
+    this.destroySuggests();
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('mic-rule-modal');
+    contentEl.createEl('h2', { text: 'Правило значения свойства' });
+
+    new Setting(contentEl)
+      .setName('Свойство')
+      .setDesc('Можно оставить пустым. Тогда правило будет глобальным для этого значения во всех свойствах.')
+      .addText((text) => {
+        text
+          .setPlaceholder('Status')
+          .setValue(this.rule.property || '')
+          .onChange((value) => {
+            this.rule.property = normalizePropertyName(value);
+          });
+      });
+
+    new Setting(contentEl)
+      .setName('Значение')
+      .setDesc('Точное значение свойства. Например: done, in progress, Важно.')
+      .addText((text) => {
+        text
+          .setPlaceholder('done')
+          .setValue(this.rule.value || '')
+          .onChange((value) => {
+            this.rule.value = normalizePropertyValue(value);
+          });
+      });
+
+    new Setting(contentEl)
+      .setName('Источник иконки')
+      .setDesc('SVG ищется в папках поиска. Emoji / текст вставляется как есть.')
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('svg', 'SVG из папки')
+          .addOption('text', 'Emoji / текст')
+          .setValue(normalizeIconSource(this.rule))
+          .onChange((value) => {
+            this.rule.iconSource = value;
+            this.render();
+          });
+      });
+
+    const iconSource = normalizeIconSource(this.rule);
+
+    new Setting(contentEl)
+      .setName(iconSource === 'text' ? 'Emoji / текст' : 'Иконка')
+      .setDesc(iconSource === 'text'
+        ? 'Можно вставить emoji или любой короткий текст.'
+        : 'Короткое имя SVG из папок поиска, например task. Можно указать и путь до SVG.')
+      .addText((text) => {
+        text
+          .setPlaceholder(iconSource === 'text' ? '✅' : 'task')
+          .setValue(this.rule.icon || '')
+          .onChange((value) => {
+            this.rule.icon = value.trim();
+          });
+        if (iconSource === 'svg') {
+          this.activeSuggests.push(new IconNameSuggest(this.app, text.inputEl, this.plugin, (iconName) => {
+            this.rule.icon = iconName;
+          }));
+        }
+      });
+
+    new Setting(contentEl)
+      .setName('Цвет текста')
+      .setDesc('Цвет применяется к совпавшему значению свойства.')
+      .addColorPicker((color) => {
+        color
+          .setValue(this.rule.textColor || '#FFFFFF')
+          .onChange((value) => {
+            this.rule.textColor = value;
+          });
+      });
+
+    new Setting(contentEl)
+      .setName('Цвет фона')
+      .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
+      .addColorPicker((color) => {
+        color
+          .setValue(this.rule.backgroundColor || this.rule.textColor || '#FFFFFF')
+          .onChange((value) => {
+            this.rule.backgroundColor = value;
+          });
+      });
+
+    new Setting(contentEl)
+      .addButton((button) => {
+        button
+          .setButtonText('Сохранить')
+          .setCta()
+          .onClick(async () => {
+            const nextRule = cleanPropertyValueRule(this.rule);
+            if (!nextRule.value) {
+              new Notice('Vault Badge Styles: укажи значение свойства');
+              return;
+            }
+            await this.onSave(nextRule);
+            this.close();
+          });
+      })
+      .addButton((button) => {
+        button
+          .setButtonText('Отмена')
+          .onClick(() => this.close());
+      });
+  }
+}
+
 class VaultBadgeStylesSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -1974,11 +2390,13 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     this.addToggleSetting(containerEl, 'Включить отрисовку ссылок в режиме просмотра', 'enableReadingViewLinks');
     this.addToggleSetting(containerEl, 'Включить отрисовку ссылок в Live Preview', 'enableLivePreviewLinks', 'Зарезервировано для отдельной реализации CodeMirror.');
     this.addToggleSetting(containerEl, 'Включить отрисовку в свойствах, базах и других панелях', 'enableGenericInternalLinks');
+    this.addToggleSetting(containerEl, 'Включить отрисовку значений свойств', 'enablePropertyValues');
     this.addToggleSetting(containerEl, 'Показывать внутренние ссылки как теги', 'enableTagStyleInternalLinks');
     this.addToggleSetting(containerEl, 'Показывать внешние ссылки как теги', 'enableTagStyleExternalLinks');
     this.addToggleSetting(containerEl, 'Показывать дерево файлов как теги', 'enableTagStyleFileExplorer');
     this.addToggleSetting(containerEl, 'Показывать ссылки в Live Preview как теги', 'enableTagStyleLivePreviewLinks');
-    this.addSliderSetting(containerEl, 'Прозрачность фона плашек', 'tagBackgroundOpacity', 'Общая прозрачность фона для ссылок, внешних ссылок и дерева файлов.');
+    this.addToggleSetting(containerEl, 'Показывать значения свойств как теги', 'enableTagStylePropertyValues');
+    this.addSliderSetting(containerEl, 'Прозрачность фона плашек', 'tagBackgroundOpacity', 'Общая прозрачность фона для ссылок, внешних ссылок, значений свойств и дерева файлов.');
     this.addToggleSetting(containerEl, 'Сокращать пути внутренних ссылок в режиме просмотра', 'enableShortenInternalLinks');
     this.addToggleSetting(containerEl, 'Сокращать вложенные теги в режиме просмотра', 'enableShortenTags');
   }
@@ -2021,6 +2439,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       'Добавить файл'
     );
     this.renderExternalRulesSection(containerEl);
+    this.renderPropertyValueRulesSection(containerEl);
   }
 
   renderPathRulesSection(containerEl, key, type, titleText, description, addButtonText) {
@@ -2123,6 +2542,56 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     });
   }
 
+  renderPropertyValueRulesSection(containerEl) {
+    const searchQuery = this.getNormalizedRuleSearchQuery();
+    const rulesHeader = new Setting(containerEl)
+      .setName('Правила значений свойств')
+      .setDesc('Если свойство заполнено, правило применяется только к этой паре свойство + значение. Если свойство пустое, правило глобально для значения.')
+      .addButton((button) => {
+        button
+          .setButtonText('Добавить значение')
+          .setCta()
+          .onClick(() => {
+            new PropertyValueRuleEditModal(this.app, this.plugin, null, async (rule) => {
+              await this.savePropertyValueRules([...(this.plugin.settings.propertyValueRules || []), rule]);
+              this.display();
+            }).open();
+          });
+      });
+
+    rulesHeader.settingEl.addClass('mic-rules-header');
+
+    const rules = Array.isArray(this.plugin.settings.propertyValueRules)
+      ? this.plugin.settings.propertyValueRules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.value)
+      : [];
+    const visibleRules = rules
+      .map((rule, index) => ({ rule, index }))
+      .filter(({ rule }) => this.propertyValueRuleMatchesSearch(rule));
+
+    const rulesContainer = containerEl.createDiv({ cls: 'mic-rules-list' });
+
+    if (!rules.length) {
+      rulesContainer.createDiv({ cls: 'setting-item-description', text: 'Правил пока нет.' });
+      return;
+    }
+
+    if (searchQuery) {
+      rulesContainer.createDiv({
+        cls: 'setting-item-description mic-rules-search-count',
+        text: `Показано ${visibleRules.length} из ${rules.length}`,
+      });
+    }
+
+    if (!visibleRules.length) {
+      rulesContainer.createDiv({ cls: 'setting-item-description', text: 'Ничего не найдено.' });
+      return;
+    }
+
+    visibleRules.forEach(({ rule, index }) => {
+      this.renderPropertyValueRuleRow(rulesContainer, rules, rule, index);
+    });
+  }
+
   getNormalizedRuleSearchQuery() {
     return String(this.ruleSearchQuery || '').trim().toLowerCase();
   }
@@ -2157,6 +2626,19 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     return this.ruleTextMatches([
       'external внешняя ссылка prefix префикс',
       rule.prefix,
+      normalizeIconSource(rule),
+      rule.icon,
+      rule.textColor,
+      rule.backgroundColor,
+    ]);
+  }
+
+  propertyValueRuleMatchesSearch(rule) {
+    return this.ruleTextMatches([
+      'property значение свойство status статус',
+      rule.property ? `${rule.property}:${rule.value}` : `global:${rule.value}`,
+      rule.property,
+      rule.value,
       normalizeIconSource(rule),
       rule.icon,
       rule.textColor,
@@ -2235,6 +2717,44 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     });
   }
 
+  renderPropertyValueRuleRow(containerEl, rules, rule, index) {
+    const row = containerEl.createDiv({ cls: 'mic-rule-row' });
+    const info = row.createDiv({ cls: 'mic-rule-info' });
+    const title = info.createDiv({ cls: 'mic-rule-title' });
+    title.setText(rule.property
+      ? `${index + 1}. Свойство: ${rule.property} = ${rule.value}`
+      : `${index + 1}. Значение: ${rule.value}`);
+
+    const previewLine = info.createDiv({ cls: 'mic-rule-preview-line' });
+    const previewStyle = this.plugin.styleIndex.getEffectiveStyleForPropertyValue(rule.property, rule.value);
+    this.renderRulePreview(previewLine, rule.value, previewStyle);
+    if (!rule.property) {
+      previewLine.createSpan({ cls: 'mic-rule-badge', text: 'глобально' });
+    }
+
+    const actions = row.createDiv({ cls: 'mic-rule-actions' });
+
+    this.addIconButton(actions, 'arrow-up', 'Вверх', index === 0, async () => {
+      await this.movePropertyValueRule(index, -1);
+    });
+    this.addIconButton(actions, 'arrow-down', 'Вниз', index === rules.length - 1, async () => {
+      await this.movePropertyValueRule(index, 1);
+    });
+    this.addIconButton(actions, 'pencil', 'Редактировать', false, () => {
+      new PropertyValueRuleEditModal(this.app, this.plugin, rule, async (nextRule) => {
+        const nextRules = [...rules];
+        nextRules[index] = nextRule;
+        await this.savePropertyValueRules(nextRules);
+        this.display();
+      }).open();
+    });
+    this.addIconButton(actions, 'x', 'Удалить', false, async () => {
+      const nextRules = rules.filter((_, ruleIndex) => ruleIndex !== index);
+      await this.savePropertyValueRules(nextRules);
+      this.display();
+    });
+  }
+
   renderRulePreview(containerEl, label, style) {
     const preview = containerEl.createSpan({ cls: 'mic-rule-preview' });
     if (style && style.textColor) {
@@ -2284,6 +2804,19 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     this.display();
   }
 
+  async movePropertyValueRule(index, direction) {
+    const rules = (this.plugin.settings.propertyValueRules || []).map((rule) => cleanPropertyValueRule(rule));
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= rules.length) return;
+
+    const movingRule = rules[index];
+    rules[index] = rules[nextIndex];
+    rules[nextIndex] = movingRule;
+
+    await this.savePropertyValueRules(rules);
+    this.display();
+  }
+
   async savePathRules(key, type, rules) {
     this.plugin.settings[key] = rules.map((rule) => cleanPathRule(rule, type)).filter((rule) => rule.path);
     await this.plugin.saveSettingsAndRefresh();
@@ -2291,6 +2824,11 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
 
   async saveExternalLinkRules(rules) {
     this.plugin.settings.externalLinkRules = rules.map((rule) => cleanExternalLinkRule(rule)).filter((rule) => rule.prefix);
+    await this.plugin.saveSettingsAndRefresh();
+  }
+
+  async savePropertyValueRules(rules) {
+    this.plugin.settings.propertyValueRules = rules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.value);
     await this.plugin.saveSettingsAndRefresh();
   }
 
@@ -2503,6 +3041,10 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       ? loadedSettings.externalLinkRules.map((rule) => cleanExternalLinkRule(rule)).filter((rule) => rule.prefix)
       : [];
 
+    settings.propertyValueRules = Array.isArray(loadedSettings.propertyValueRules)
+      ? loadedSettings.propertyValueRules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.value)
+      : [];
+
     settings.iconSearchPaths = Array.isArray(loadedSettings.iconSearchPaths)
       ? loadedSettings.iconSearchPaths.map((path) => normalizeVaultPath(path).trim()).filter(Boolean)
       : DEFAULT_SETTINGS.iconSearchPaths;
@@ -2552,7 +3094,10 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
     const externalRules = (this.settings.externalLinkRules || [])
       .map((rule) => cleanExternalLinkRule(rule))
       .filter((rule) => rule.prefix);
-    const allRules = [...pathRules, ...externalRules];
+    const propertyValueRules = (this.settings.propertyValueRules || [])
+      .map((rule) => cleanPropertyValueRule(rule))
+      .filter((rule) => rule.value);
+    const allRules = [...pathRules, ...externalRules, ...propertyValueRules];
     const duplicateRuleCounts = new Map();
     const missingIcons = [];
     const rulesWithoutMatches = [];
@@ -2576,6 +3121,16 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
 
       const iconResult = await this.validateRuleIcon(rule, `external:${rule.prefix}`);
+      if (iconResult === 'resolved') resolvedIconCount += 1;
+      if (iconResult && iconResult.status === 'missing') missingIcons.push(iconResult);
+    }
+
+    for (const rule of propertyValueRules) {
+      const duplicateKey = `property-value:${propertyValueRuleKey(rule.property, rule.value)}`;
+      duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
+
+      const label = rule.property ? `property:${rule.property}=${rule.value}` : `property:*=${rule.value}`;
+      const iconResult = await this.validateRuleIcon(rule, label);
       if (iconResult === 'resolved') resolvedIconCount += 1;
       if (iconResult && iconResult.status === 'missing') missingIcons.push(iconResult);
     }
@@ -2629,6 +3184,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
         folderRules: (this.settings.folderRules || []).map((rule) => cleanPathRule(rule, 'folder')),
         fileRules: (this.settings.fileRules || []).map((rule) => cleanPathRule(rule, 'file')),
         externalLinkRules: (this.settings.externalLinkRules || []).map((rule) => cleanExternalLinkRule(rule)),
+        propertyValueRules: (this.settings.propertyValueRules || []).map((rule) => cleanPropertyValueRule(rule)),
       },
     };
   }
@@ -2661,6 +3217,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
     document.body.classList.toggle(TAG_STYLE_EXTERNAL_LINKS_CLASS, Boolean(this.settings.enableTagStyleExternalLinks));
     document.body.classList.toggle(TAG_STYLE_FILE_EXPLORER_CLASS, Boolean(this.settings.enableTagStyleFileExplorer));
     document.body.classList.toggle(TAG_STYLE_LIVE_PREVIEW_CLASS, Boolean(this.settings.enableTagStyleLivePreviewLinks));
+    document.body.classList.toggle(TAG_STYLE_PROPERTY_VALUES_CLASS, Boolean(this.settings.enableTagStylePropertyValues));
     const opacity = normalizeOpacity(this.settings.tagBackgroundOpacity);
     document.body.style.setProperty('--mic-tag-background-opacity', `${opacity}%`);
     document.body.style.setProperty('--mic-tag-background-alpha', String(opacity / 100));
@@ -2671,7 +3228,8 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       TAG_STYLE_INTERNAL_LINKS_CLASS,
       TAG_STYLE_EXTERNAL_LINKS_CLASS,
       TAG_STYLE_FILE_EXPLORER_CLASS,
-      TAG_STYLE_LIVE_PREVIEW_CLASS
+      TAG_STYLE_LIVE_PREVIEW_CLASS,
+      TAG_STYLE_PROPERTY_VALUES_CLASS
     );
     document.body.style.removeProperty('--mic-tag-background-opacity');
     document.body.style.removeProperty('--mic-tag-background-alpha');
