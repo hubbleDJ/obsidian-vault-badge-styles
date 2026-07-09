@@ -1,58 +1,112 @@
 # Vault Badge Styles
 
-Vault Badge Styles adds badge-like icons, colors, and shortened labels to Obsidian vault items.
+Vault Badge Styles - плагин для Obsidian, который рисует заметки, папки, внутренние ссылки и внешние ссылки как аккуратные плашки с иконками и цветами.
 
-The plugin is rule-based: styles are configured in plugin settings, not in note frontmatter.
+Главная идея: визуальные правила живут в настройках плагина, а не во frontmatter заметок. Заметки остаются обычными Markdown-файлами, а внешний вид настраивается отдельно.
 
-## Features
+## Что умеет
 
-- Folder rules with optional cascade to nested files and folders.
-- Exact file rules for any vault file format.
-- External link rules by URL prefix, for example `tg://`, `tel:`, `https://vk.com/`.
-- SVG icons from configurable vault folders.
-- Emoji or text icons.
-- Text and background colors for badges.
-- Shared badge background opacity.
-- Internal link path shortening in Reading View.
-- Nested tag shortening in Reading View.
-- Rendering in File Explorer, Reading View, properties, Bases, backlinks-like panels, and tab headers.
-- Rule search in settings.
-- Matched path preview and rule/icon validation commands.
-- Config export/import via `vault-badge-styles.config.json`.
+- Настраивать стиль папок по пути.
+- Каскадно применять стиль папки к вложенным файлам и папкам.
+- Настраивать стиль конкретного файла по точному пути, файл может быть любого формата.
+- Настраивать внешние ссылки по префиксу URL, например `tg://`, `tel:`, `https://vk.com/`.
+- Использовать SVG-иконки из папок внутри vault.
+- Использовать emoji или любой короткий текст вместо SVG.
+- Задавать цвет текста и цвет фона плашки для каждого правила.
+- Управлять общей прозрачностью фона плашек.
+- Сокращать пути внутренних ссылок в режиме просмотра.
+- Сокращать вложенные теги в режиме просмотра.
+- Применять стили в дереве файлов, заметках, свойствах, Bases, панелях с упоминаниями и заголовках вкладок.
+- Искать правила в настройках.
+- Проверять правила и иконки командами диагностики.
+- Экспортировать и импортировать конфиг через `vault-badge-styles.config.json`.
 
-## Installation via BRAT
+## Установка через BRAT
 
-1. Install the Obsidian plugin **Obsidian42 - BRAT**.
-2. Open Command Palette.
-3. Run `BRAT: Add a beta plugin for testing`.
-4. Paste this repository URL:
+1. Установи плагин **Obsidian42 - BRAT**.
+2. Открой Command Palette.
+3. Запусти команду `BRAT: Add a beta plugin for testing`.
+4. Вставь адрес репозитория:
 
-   `https://github.com/hubbleDJ/obsidian-vault-badge-styles`
+   ```text
+   https://github.com/hubbleDJ/obsidian-vault-badge-styles
+   ```
 
-5. Select the latest version.
-6. Enable **Vault Badge Styles** in Obsidian Community Plugins.
+5. Выбери последнюю версию.
+6. Включи **Vault Badge Styles** в списке Community Plugins.
 
-## Manual installation
+Если BRAT обновляет плагин странно или не подтягивает стили, проверь, что в папке плагина есть все три файла:
 
-1. Download the latest release.
-2. Copy these files:
+```text
+main.js
+manifest.json
+styles.css
+```
+
+## Ручная установка
+
+1. Скачай последний release.
+2. Скопируй файлы:
 
    - `main.js`
    - `manifest.json`
    - `styles.css`
 
-3. Put them into:
+3. Положи их в папку:
 
-   `.obsidian/plugins/vault-badge-styles/`
+   ```text
+   .obsidian/plugins/vault-badge-styles/
+   ```
 
-4. Restart Obsidian.
-5. Enable **Vault Badge Styles** in Community Plugins.
+4. Перезапусти Obsidian.
+5. Включи **Vault Badge Styles** в Community Plugins.
 
-## Icon folders
+## Правила
 
-Configure icon search folders in plugin settings. Each folder path is relative to the vault root.
+В настройках есть три основных раздела.
 
-For example:
+### Правила каталогов
+
+Правило применяется к папке по точному пути. Например:
+
+```text
+Development/Golang
+```
+
+Если включено каскадное применение, стиль этой папки будет применяться к вложенным файлам и папкам. Более точное вложенное правило переопределяет родительское.
+
+### Правила файлов
+
+Правило применяется к конкретному файлу по точному пути. Расширение может быть любым:
+
+```text
+main.md
+Project tasks.base
+_Artifacts/Attachments/logo.png
+```
+
+Файловое правило сильнее каскадного правила папки.
+
+### Правила внешних ссылок
+
+Правило применяется, если ссылка начинается с указанного префикса:
+
+```text
+tg://
+tel:
+https://vk.com/
+```
+
+Если подходит несколько правил, выигрывает самое длинное совпадение. Например, `https://vk.com/` сильнее, чем `https://`.
+
+## Иконки
+
+Плагин поддерживает два источника иконок:
+
+- **SVG из папки** - плагин ищет SVG в заданных папках.
+- **Emoji / текст** - значение вставляется как есть.
+
+Папки поиска иконок задаются относительно корня vault. Пример:
 
 ```text
 _Artifacts/Attachments/icons/me
@@ -60,7 +114,7 @@ _Artifacts/Attachments/icons
 .obsidian/icons
 ```
 
-If a rule uses icon name `golang`, the plugin tries:
+Если в правиле указана иконка `golang`, плагин попробует найти:
 
 ```text
 _Artifacts/Attachments/icons/me/golang.svg
@@ -71,21 +125,71 @@ _Artifacts/Attachments/icons/golang/golang.svg
 .obsidian/icons/golang/golang.svg
 ```
 
-## Rules
+## Цвета и плашки
 
-Settings are split into three sections:
+Каждое правило может задавать:
 
-- Folder rules
-- File rules
-- External link rules
+- иконку;
+- цвет текста;
+- цвет фона.
 
-Folder rules can cascade to nested files and folders. A closer nested rule wins over a parent cascade rule.
+Форма плашки, отступы и базовый вид переиспользуют стиль тегов текущей темы Obsidian. Цвета берутся из правила плагина.
 
-File rules are exact path rules and can target any file format in the vault.
+Общая прозрачность фона плашек задается отдельным ползунком в настройках. Она применяется к внутренним ссылкам, внешним ссылкам и дереву файлов.
 
-External link rules match by prefix. Longer prefixes win over shorter prefixes.
+## Сокращение путей
 
-## Commands
+Плагин может сокращать внутренние ссылки в режиме просмотра.
+
+Например:
+
+```markdown
+[[Development/Golang/Golang]]
+```
+
+В отображении будет видно только:
+
+```text
+Golang
+```
+
+Исходный Markdown при этом не меняется.
+
+## Сокращение тегов
+
+Плагин может сокращать вложенные теги в режиме просмотра.
+
+Например:
+
+```text
+#todo/СрочноВажно
+```
+
+В отображении будет видно только:
+
+```text
+СрочноВажно
+```
+
+При клике по тегу поиск выполняется по исходному полному тегу.
+
+## Где применяются стили
+
+Плагин умеет применять стили в нескольких местах Obsidian:
+
+- дерево файлов;
+- заголовки вкладок;
+- Reading View;
+- свойства заметок;
+- Bases;
+- панели с упоминаниями и похожие панели;
+- внешние ссылки.
+
+Live Preview поддерживается частично. Полная поддержка Live Preview требует отдельной реализации через CodeMirror decorations.
+
+## Команды
+
+Плагин добавляет команды:
 
 - `Vault Badge Styles: Rebuild icon/style index`
 - `Vault Badge Styles: Refresh file explorer icons`
@@ -96,20 +200,21 @@ External link rules match by prefix. Longer prefixes win over shorter prefixes.
 - `Vault Badge Styles: Export config to vault root`
 - `Vault Badge Styles: Import config from vault root`
 
-## Export and import
+## Экспорт и импорт
 
-`Export config to vault root` writes:
+Команда экспорта создает файл в корне vault:
 
 ```text
 vault-badge-styles.config.json
 ```
 
-`Import config from vault root` reads the same file and replaces plugin settings.
+Команда импорта читает этот же файл и заменяет настройки плагина.
 
-This mode exports config only. SVG files are not bundled yet.
+Экспортируются только настройки. SVG-иконки не упаковываются в архив и должны лежать в vault отдельно.
 
-## Known limitations
+## Ограничения
 
-- Live Preview styling is intentionally disabled by default. Full Live Preview support requires CodeMirror decorations and should be implemented separately.
-- Search results and Quick Switcher may need extra adapters if Obsidian changes their DOM.
-- The plugin styles rendered UI only. It does not rewrite markdown files.
+- Плагин меняет только отрисовку интерфейса Obsidian. Markdown-файлы не переписываются.
+- Полная поддержка Live Preview пока не реализована.
+- Некоторые новые панели Obsidian могут потребовать отдельного адаптера, если у них отличается DOM-структура.
+- Для обновлений через BRAT лучше выпускать новый tag/release, а не перезаливать старый.
