@@ -217,6 +217,10 @@ function normalizePropertyValue(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
+function normalizeRenderedPropertyValue(value) {
+  return normalizePropertyValue(value).replace(/\s*[×✕]\s*$/, '').trim();
+}
+
 function normalizePropertyValueKey(value) {
   return normalizePropertyValue(value).toLowerCase();
 }
@@ -244,6 +248,30 @@ function cleanPropertyValueRule(rule) {
   }
 
   return nextRule;
+}
+
+function flattenPropertyValues(value) {
+  if (value === undefined || value === null) return [];
+  if (Array.isArray(value)) return value.flatMap((item) => flattenPropertyValues(item));
+  if (value instanceof Date) return [value.toISOString()];
+  if (typeof value === 'object') return [];
+  const normalized = normalizePropertyValue(value);
+  return normalized ? [normalized] : [];
+}
+
+function normalizePropertyHeaderText(value) {
+  const normalized = normalizePropertyName(value).replace(/[↕↑↓]+/g, '').trim();
+  return normalized.replace(/^[^A-Za-zА-Яа-я0-9_#]+/u, '').trim();
+}
+
+function getElementDepth(element) {
+  let depth = 0;
+  let current = element;
+  while (current && current.parentElement) {
+    depth += 1;
+    current = current.parentElement;
+  }
+  return depth;
 }
 
 function labelFromPath(path) {
@@ -462,7 +490,6 @@ class StyleIndex {
     this.cascadingFolderStyles = [];
     this.externalPrefixStyles = [];
     this.propertyValueStyles = new Map();
-    this.globalPropertyValueStyles = new Map();
   }
 
   setSettings(settings) {
@@ -475,7 +502,6 @@ class StyleIndex {
     this.cascadingFolderStyles = [];
     this.externalPrefixStyles = [];
     this.propertyValueStyles.clear();
-    this.globalPropertyValueStyles.clear();
 
     await this.addSettingsRules();
     this.cascadingFolderStyles.sort((a, b) => b.targetPath.length - a.targetPath.length);
@@ -550,11 +576,9 @@ class StyleIndex {
   async addPropertyValueRules(rules) {
     for (const rawRule of rules) {
       const rule = cleanPropertyValueRule(rawRule);
-      if (!rule.value) continue;
+      if (!rule.property || !rule.value) continue;
 
-      const targetPath = rule.property
-        ? `${rule.property}: ${rule.value}`
-        : rule.value;
+      const targetPath = `${rule.property}: ${rule.value}`;
       const style = await this.buildStyleFromRule({ ...rule, type: 'property-value' }, targetPath);
       if (!style) continue;
 
@@ -567,11 +591,7 @@ class StyleIndex {
         ruleType: 'property-value',
       };
 
-      if (rule.property) {
-        this.propertyValueStyles.set(propertyValueRuleKey(rule.property, rule.value), nextStyle);
-      } else {
-        this.globalPropertyValueStyles.set(normalizePropertyValueKey(rule.value), nextStyle);
-      }
+      this.propertyValueStyles.set(propertyValueRuleKey(rule.property, rule.value), nextStyle);
     }
   }
 
@@ -621,13 +641,11 @@ class StyleIndex {
   }
 
   getEffectiveStyleForPropertyValue(propertyName, value) {
+    const normalizedPropertyName = normalizePropertyName(propertyName);
     const normalizedValue = normalizePropertyValue(value);
-    if (!normalizedValue) return null;
+    if (!normalizedPropertyName || !normalizedValue) return null;
 
-    const exact = this.propertyValueStyles.get(propertyValueRuleKey(propertyName, normalizedValue));
-    if (exact) return exact;
-
-    return this.globalPropertyValueStyles.get(normalizePropertyValueKey(normalizedValue)) || null;
+    return this.propertyValueStyles.get(propertyValueRuleKey(normalizedPropertyName, normalizedValue)) || null;
   }
 
   getEffectiveStyleForPath(path) {
@@ -1329,26 +1347,37 @@ class GenericInternalLinkRenderer {
       });
     });
 
-    const baseSelectors = [
-      '.workspace-leaf-content[data-type="bases"] [data-property-key]',
-      '.workspace-leaf-content[data-type="bases"] [data-property]',
-      '.workspace-leaf-content[data-type="bases"] [data-field]',
-      '.workspace-leaf-content[data-type="bases"] td',
-      '.workspace-leaf-content[data-type="bases"] .table-cell',
-      '.workspace-leaf-content[data-type="bases"] .bases-table-cell',
-      '.bases-embed [data-property-key]',
-      '.bases-embed [data-property]',
-      '.bases-embed [data-field]',
-      '.bases-embed td',
-      '.bases-embed .table-cell',
-      '.bases-embed .bases-table-cell',
-      '.bases-view [data-property-key]',
-      '.bases-view [data-property]',
-      '.bases-view [data-field]',
-      '.bases-view td',
-      '.bases-view .table-cell',
-      '.bases-view .bases-table-cell',
+    const baseRoots = [
+      '.workspace-leaf-content[data-type="base"]',
+      '.workspace-leaf-content[data-type="bases"]',
+      '.base-embed',
+      '.bases-embed',
+      '.base-view',
+      '.bases-view',
     ];
+    const baseSelectors = baseRoots.flatMap((root) => [
+      `${root} [data-property-value]`,
+      `${root} [data-value]`,
+      `${root} .multi-select-pill`,
+      `${root} .metadata-property-value-pill`,
+      `${root} .metadata-property-value-text`,
+      `${root} [data-property-key]`,
+      `${root} [data-property]`,
+      `${root} [data-property-name]`,
+      `${root} [data-field]`,
+      `${root} [data-field-name]`,
+      `${root} [data-column-key]`,
+      `${root} [role="gridcell"]`,
+      `${root} [role="cell"]`,
+      `${root} td`,
+      `${root} .base-table-cell`,
+      `${root} .table-cell`,
+      `${root} .bases-table-cell`,
+      `${root} .base-td`,
+      `${root} .bases-td`,
+      `${root} .base-cell`,
+      `${root} .bases-cell`,
+    ]);
 
     document.querySelectorAll(baseSelectors.join(', ')).forEach((element) => {
       if (!(element instanceof HTMLElement) || !this.isPropertyValueElement(element)) return;
@@ -1361,16 +1390,33 @@ class GenericInternalLinkRenderer {
       });
     });
 
+    return this.filterLeafPropertyValueCandidates(candidates);
+  }
+
+  filterLeafPropertyValueCandidates(candidates) {
     const seen = new Set();
-    return candidates.filter(({ element }) => {
+    const unique = candidates.filter(({ element, propertyName, value }) => {
+      if (!propertyName || !value) return false;
       if (seen.has(element)) return false;
       seen.add(element);
       return true;
     });
+
+    unique.sort((a, b) => getElementDepth(b.element) - getElementDepth(a.element));
+
+    const accepted = [];
+    for (const candidate of unique) {
+      const hasAcceptedChild = accepted.some(({ element }) => candidate.element.contains(element));
+      if (hasAcceptedChild) continue;
+      accepted.push(candidate);
+    }
+
+    return accepted;
   }
 
   isPropertyValueElement(element) {
     if (element.matches('input, textarea, select, button, svg, path')) return false;
+    if (element.matches('th, [role="columnheader"], .base-table-header-cell, .bases-table-header-cell, .base-th, .bases-th, .table-header-cell')) return false;
     if (element.matches('a, [data-href], [data-url], .internal-link, .external-link, .metadata-link')) return false;
     if (element.closest('.modal, .suggestion-container, .menu, .prompt, .nav-files-container')) return false;
     if (element.classList.contains(ICON_CLASS)) return false;
@@ -1403,26 +1449,128 @@ class GenericInternalLinkRenderer {
   }
 
   getPropertyNameFromContext(element) {
-    const attrNames = ['data-property-key', 'data-property', 'data-field', 'data-column-name', 'data-name'];
+    const tablePropertyName = this.getPropertyNameFromTableStructure(element);
+    if (tablePropertyName) return tablePropertyName;
+
+    const attrNames = [
+      'data-property-key',
+      'data-property',
+      'data-property-name',
+      'data-field',
+      'data-field-name',
+      'data-column-key',
+      'data-column-name',
+      'data-column',
+      'data-name',
+    ];
     let current = element;
     while (current && current instanceof HTMLElement && current !== document.body) {
       for (const attrName of attrNames) {
         const value = current.getAttribute(attrName);
-        if (value) return normalizePropertyName(value);
+        if (value) return normalizePropertyHeaderText(value);
       }
       current = current.parentElement;
     }
     return '';
   }
 
+  getPropertyNameFromTableStructure(element) {
+    const cell = this.getBaseCellElement(element);
+    if (!cell) return '';
+
+    const directName = this.getPropertyNameFromElementAttributes(cell);
+    if (directName) return directName;
+
+    const columnIndex = this.getColumnIndex(cell);
+    if (columnIndex < 0) return '';
+
+    const root = cell.closest('table, [role="grid"], .base-table, .bases-table, .base-view, .bases-view, .base-embed, .bases-embed, .workspace-leaf-content[data-type="base"], .workspace-leaf-content[data-type="bases"]');
+    if (!root) return '';
+
+    const headerSelectors = [
+      'thead th',
+      '[role="columnheader"]',
+      '.base-table-header-cell',
+      '.bases-table-header-cell',
+      '.base-th',
+      '.bases-th',
+      '.table-header-cell',
+      '.table-view-th',
+    ];
+    const headers = [...root.querySelectorAll(headerSelectors.join(', '))]
+      .filter((header) => header instanceof HTMLElement);
+
+    const header = headers.find((headerEl) => this.getColumnIndex(headerEl) === columnIndex) || headers[columnIndex];
+    return header ? normalizePropertyHeaderText(this.extractPropertyValueText(header)) : '';
+  }
+
+  getPropertyNameFromElementAttributes(element) {
+    const attrNames = [
+      'data-property-key',
+      'data-property',
+      'data-property-name',
+      'data-field',
+      'data-field-name',
+      'data-column-key',
+      'data-column-name',
+      'data-column',
+      'data-name',
+    ];
+
+    for (const attrName of attrNames) {
+      const value = element.getAttribute(attrName);
+      if (!value) continue;
+      const normalized = normalizePropertyHeaderText(value.split(':')[0]);
+      if (normalized) return normalized;
+    }
+
+    return '';
+  }
+
+  getBaseCellElement(element) {
+    const selector = [
+      'td',
+      '[role="gridcell"]',
+      '[role="cell"]',
+      '.base-table-cell',
+      '.table-cell',
+      '.bases-table-cell',
+      '.base-td',
+      '.bases-td',
+      '.base-cell',
+      '.bases-cell',
+      '[data-cell]',
+      '[data-cell-id]',
+    ].join(', ');
+    return element.matches(selector) ? element : element.closest(selector);
+  }
+
+  getColumnIndex(element) {
+    if (typeof element.cellIndex === 'number' && element.cellIndex >= 0) return element.cellIndex;
+
+    const attrNames = ['aria-colindex', 'data-colindex', 'data-column-index', 'data-col', 'data-index'];
+    for (const attrName of attrNames) {
+      const rawValue = element.getAttribute(attrName);
+      if (!rawValue) continue;
+      const numberValue = Number.parseInt(rawValue, 10);
+      if (Number.isFinite(numberValue)) {
+        return attrName === 'aria-colindex' ? numberValue - 1 : numberValue;
+      }
+    }
+
+    const parent = element.parentElement;
+    if (!parent) return -1;
+    return [...parent.children].filter((child) => child instanceof HTMLElement).indexOf(element);
+  }
+
   extractPropertyValueText(element) {
     if (!element) return '';
     if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
-      return normalizePropertyValue(element.value);
+      return normalizeRenderedPropertyValue(element.value);
     }
 
     const clone = element.cloneNode(true);
-    if (!(clone instanceof HTMLElement)) return normalizePropertyValue(element.textContent);
+    if (!(clone instanceof HTMLElement)) return normalizeRenderedPropertyValue(element.textContent);
 
     clone.querySelectorAll([
       `.${ICON_CLASS}`,
@@ -1434,7 +1582,7 @@ class GenericInternalLinkRenderer {
       'svg',
     ].join(', ')).forEach((child) => child.remove());
 
-    return normalizePropertyValue(clone.textContent);
+    return normalizeRenderedPropertyValue(clone.textContent);
   }
 
   clearPropertyValues() {
@@ -1651,11 +1799,14 @@ class VaultPathSuggest {
       if (index === this.highlightedIndex) itemEl.addClass('is-selected');
       this.renderSuggestion(path, itemEl);
 
-      itemEl.addEventListener('pointerdown', (event) => {
+      const selectPath = (event) => {
         event.preventDefault();
         event.stopPropagation();
         this.selectSuggestion(path);
-      });
+      };
+      itemEl.addEventListener('pointerdown', selectPath);
+      itemEl.addEventListener('mousedown', selectPath);
+      itemEl.addEventListener('click', selectPath);
     });
 
     this.isOpen = true;
@@ -1811,11 +1962,14 @@ class IconNameSuggest {
       if (index === this.highlightedIndex) itemEl.addClass('is-selected');
       this.renderSuggestion(iconName, itemEl);
 
-      itemEl.addEventListener('pointerdown', (event) => {
+      const selectIcon = (event) => {
         event.preventDefault();
         event.stopPropagation();
         this.selectSuggestion(iconName);
-      });
+      };
+      itemEl.addEventListener('pointerdown', selectIcon);
+      itemEl.addEventListener('mousedown', selectIcon);
+      itemEl.addEventListener('click', selectIcon);
     });
 
     this.isOpen = true;
@@ -1884,6 +2038,150 @@ class IconNameSuggest {
     if (!this.isOpen) return;
     this.inputEl.value = iconName;
     this.onSelect(iconName);
+    this.close();
+  }
+
+  open() {
+    if (!this.suggestionEl.isConnected) {
+      this.inputEl.ownerDocument.body.appendChild(this.suggestionEl);
+    }
+
+    const rect = this.inputEl.getBoundingClientRect();
+    this.suggestionEl.style.left = `${rect.left}px`;
+    this.suggestionEl.style.top = `${rect.bottom + 4}px`;
+    this.suggestionEl.style.width = `${rect.width}px`;
+    this.suggestionEl.style.display = 'block';
+  }
+
+  close() {
+    this.isOpen = false;
+    this.inputEl.setAttribute('aria-expanded', 'false');
+    this.suggestionEl.remove();
+  }
+
+  destroy() {
+    this.inputEl.removeEventListener('input', this.onInput);
+    this.inputEl.removeEventListener('focus', this.onFocus);
+    this.inputEl.removeEventListener('keydown', this.onKeydown);
+    this.inputEl.removeEventListener('blur', this.onBlur);
+    document.removeEventListener('pointerdown', this.onDocumentPointerDown, true);
+    window.removeEventListener('resize', this.onWindowResize);
+    this.suggestionEl.remove();
+  }
+}
+
+class TextValueSuggest {
+  constructor(inputEl, getSuggestions, onSelect, ariaLabel) {
+    this.inputEl = inputEl;
+    this.getSuggestions = getSuggestions;
+    this.onSelect = onSelect;
+    this.highlightedIndex = 0;
+    this.suggestions = [];
+    this.isOpen = false;
+    this.suggestionEl = document.createElement('div');
+    this.suggestionEl.classList.add('suggestion-container', 'mic-suggestion-popover');
+    this.suggestionListEl = this.suggestionEl.createDiv({ cls: 'suggestion' });
+    this.suggestionListEl.setAttribute('role', 'listbox');
+    this.suggestionListEl.setAttribute('aria-label', ariaLabel || 'Text suggestions');
+    this.onInput = () => this.render();
+    this.onFocus = () => this.render();
+    this.onKeydown = (event) => this.handleKeydown(event);
+    this.onBlur = () => window.setTimeout(() => this.close(), 80);
+    this.onDocumentPointerDown = (event) => {
+      if (!this.isOpen) return;
+      if (this.inputEl.contains(event.target) || this.suggestionEl.contains(event.target)) return;
+      this.close();
+    };
+    this.onWindowResize = () => this.close();
+
+    this.inputEl.setAttribute('aria-autocomplete', 'list');
+    this.inputEl.setAttribute('aria-expanded', 'false');
+    this.suggestionEl.addEventListener('mousedown', (event) => event.preventDefault());
+
+    this.inputEl.addEventListener('input', this.onInput);
+    this.inputEl.addEventListener('focus', this.onFocus);
+    this.inputEl.addEventListener('keydown', this.onKeydown);
+    this.inputEl.addEventListener('blur', this.onBlur);
+    document.addEventListener('pointerdown', this.onDocumentPointerDown, true);
+    window.addEventListener('resize', this.onWindowResize);
+  }
+
+  render() {
+    this.suggestions = this.getSuggestions(this.inputEl.value);
+    this.highlightedIndex = Math.min(this.highlightedIndex, Math.max(0, this.suggestions.length - 1));
+
+    this.suggestionListEl.empty();
+    if (!this.suggestions.length) {
+      this.close();
+      return;
+    }
+
+    this.suggestions.forEach((value, index) => {
+      const itemEl = this.suggestionListEl.createDiv({ cls: 'suggestion-item mic-path-suggestion-option' });
+      itemEl.setAttribute('role', 'option');
+      itemEl.setAttribute('aria-selected', index === this.highlightedIndex ? 'true' : 'false');
+      if (index === this.highlightedIndex) itemEl.addClass('is-selected');
+      itemEl.setText(value);
+
+      const selectValue = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        this.selectSuggestion(value);
+      };
+      itemEl.addEventListener('pointerdown', selectValue);
+      itemEl.addEventListener('mousedown', selectValue);
+      itemEl.addEventListener('click', selectValue);
+    });
+
+    this.isOpen = true;
+    this.inputEl.setAttribute('aria-expanded', 'true');
+    this.open();
+  }
+
+  handleKeydown(event) {
+    const wasOpen = this.isOpen;
+    if (!wasOpen && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
+      this.render();
+      if (event.key !== 'Enter') {
+        event.preventDefault();
+        return;
+      }
+    }
+
+    if (!this.isOpen) return;
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.highlightedIndex = Math.min(this.highlightedIndex + 1, this.suggestions.length - 1);
+      this.render();
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.highlightedIndex = Math.max(this.highlightedIndex - 1, 0);
+      this.render();
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      const value = this.suggestions[this.highlightedIndex] || this.suggestions[0];
+      if (!value) return;
+      event.preventDefault();
+      this.selectSuggestion(value);
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.close();
+    }
+  }
+
+  selectSuggestion(value) {
+    if (!this.isOpen) return;
+    this.inputEl.value = value;
+    this.onSelect(value);
     this.close();
   }
 
@@ -2239,6 +2537,59 @@ class PropertyValueRuleEditModal extends Modal {
     this.activeSuggests = [];
   }
 
+  getPropertyNameSuggestions(query) {
+    const normalizedQuery = normalizePropertyNameKey(query);
+    const names = new Set();
+
+    for (const rule of this.plugin.settings.propertyValueRules || []) {
+      const property = normalizePropertyName(rule.property);
+      if (property) names.add(property);
+    }
+
+    for (const file of this.app.vault.getFiles()) {
+      if (file.extension !== 'md') continue;
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!frontmatter || typeof frontmatter !== 'object') continue;
+
+      Object.keys(frontmatter)
+        .filter((key) => key && key !== 'position')
+        .forEach((key) => names.add(key));
+    }
+
+    return [...names]
+      .filter((name) => !normalizedQuery || normalizePropertyNameKey(name).includes(normalizedQuery))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 50);
+  }
+
+  getPropertyValueSuggestions(query) {
+    const propertyKey = normalizePropertyNameKey(this.rule.property);
+    const normalizedQuery = normalizePropertyValueKey(query);
+    const values = new Set();
+
+    for (const rule of this.plugin.settings.propertyValueRules || []) {
+      if (propertyKey && normalizePropertyNameKey(rule.property) !== propertyKey) continue;
+      flattenPropertyValues(rule.value).forEach((value) => values.add(value));
+    }
+
+    for (const file of this.app.vault.getFiles()) {
+      if (file.extension !== 'md') continue;
+      const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+      if (!frontmatter || typeof frontmatter !== 'object') continue;
+
+      for (const [key, value] of Object.entries(frontmatter)) {
+        if (!key || key === 'position') continue;
+        if (propertyKey && normalizePropertyNameKey(key) !== propertyKey) continue;
+        flattenPropertyValues(value).forEach((item) => values.add(item));
+      }
+    }
+
+    return [...values]
+      .filter((value) => !normalizedQuery || normalizePropertyValueKey(value).includes(normalizedQuery))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 50);
+  }
+
   render() {
     this.destroySuggests();
     const { contentEl } = this;
@@ -2248,7 +2599,7 @@ class PropertyValueRuleEditModal extends Modal {
 
     new Setting(contentEl)
       .setName('Свойство')
-      .setDesc('Можно оставить пустым. Тогда правило будет глобальным для этого значения во всех свойствах.')
+      .setDesc('Обязательное поле. Выбери существующее свойство из подсказки или введи имя вручную.')
       .addText((text) => {
         text
           .setPlaceholder('Status')
@@ -2256,11 +2607,14 @@ class PropertyValueRuleEditModal extends Modal {
           .onChange((value) => {
             this.rule.property = normalizePropertyName(value);
           });
+        this.activeSuggests.push(new TextValueSuggest(text.inputEl, (query) => this.getPropertyNameSuggestions(query), (value) => {
+          this.rule.property = normalizePropertyName(value);
+        }, 'Property suggestions'));
       });
 
     new Setting(contentEl)
       .setName('Значение')
-      .setDesc('Точное значение свойства. Например: done, in progress, Важно.')
+      .setDesc('Точное значение свойства. Можно выбрать из значений, найденных в заметках.')
       .addText((text) => {
         text
           .setPlaceholder('done')
@@ -2268,6 +2622,9 @@ class PropertyValueRuleEditModal extends Modal {
           .onChange((value) => {
             this.rule.value = normalizePropertyValue(value);
           });
+        this.activeSuggests.push(new TextValueSuggest(text.inputEl, (query) => this.getPropertyValueSuggestions(query), (value) => {
+          this.rule.value = normalizePropertyValue(value);
+        }, 'Property value suggestions'));
       });
 
     new Setting(contentEl)
@@ -2334,6 +2691,10 @@ class PropertyValueRuleEditModal extends Modal {
           .setCta()
           .onClick(async () => {
             const nextRule = cleanPropertyValueRule(this.rule);
+            if (!nextRule.property) {
+              new Notice('Vault Badge Styles: укажи свойство');
+              return;
+            }
             if (!nextRule.value) {
               new Notice('Vault Badge Styles: укажи значение свойства');
               return;
@@ -2546,7 +2907,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     const searchQuery = this.getNormalizedRuleSearchQuery();
     const rulesHeader = new Setting(containerEl)
       .setName('Правила значений свойств')
-      .setDesc('Если свойство заполнено, правило применяется только к этой паре свойство + значение. Если свойство пустое, правило глобально для значения.')
+      .setDesc('Правило применяется только к точной паре свойство + значение. Например: Статус = 🟢 done.')
       .addButton((button) => {
         button
           .setButtonText('Добавить значение')
@@ -2562,7 +2923,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     rulesHeader.settingEl.addClass('mic-rules-header');
 
     const rules = Array.isArray(this.plugin.settings.propertyValueRules)
-      ? this.plugin.settings.propertyValueRules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.value)
+      ? this.plugin.settings.propertyValueRules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.property && rule.value)
       : [];
     const visibleRules = rules
       .map((rule, index) => ({ rule, index }))
@@ -2636,7 +2997,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
   propertyValueRuleMatchesSearch(rule) {
     return this.ruleTextMatches([
       'property значение свойство status статус',
-      rule.property ? `${rule.property}:${rule.value}` : `global:${rule.value}`,
+      `${rule.property}:${rule.value}`,
       rule.property,
       rule.value,
       normalizeIconSource(rule),
@@ -2721,16 +3082,11 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     const row = containerEl.createDiv({ cls: 'mic-rule-row' });
     const info = row.createDiv({ cls: 'mic-rule-info' });
     const title = info.createDiv({ cls: 'mic-rule-title' });
-    title.setText(rule.property
-      ? `${index + 1}. Свойство: ${rule.property} = ${rule.value}`
-      : `${index + 1}. Значение: ${rule.value}`);
+    title.setText(`${index + 1}. Свойство: ${rule.property} = ${rule.value}`);
 
     const previewLine = info.createDiv({ cls: 'mic-rule-preview-line' });
     const previewStyle = this.plugin.styleIndex.getEffectiveStyleForPropertyValue(rule.property, rule.value);
     this.renderRulePreview(previewLine, rule.value, previewStyle);
-    if (!rule.property) {
-      previewLine.createSpan({ cls: 'mic-rule-badge', text: 'глобально' });
-    }
 
     const actions = row.createDiv({ cls: 'mic-rule-actions' });
 
@@ -2805,7 +3161,9 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
   }
 
   async movePropertyValueRule(index, direction) {
-    const rules = (this.plugin.settings.propertyValueRules || []).map((rule) => cleanPropertyValueRule(rule));
+    const rules = (this.plugin.settings.propertyValueRules || [])
+      .map((rule) => cleanPropertyValueRule(rule))
+      .filter((rule) => rule.property && rule.value);
     const nextIndex = index + direction;
     if (nextIndex < 0 || nextIndex >= rules.length) return;
 
@@ -2828,7 +3186,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
   }
 
   async savePropertyValueRules(rules) {
-    this.plugin.settings.propertyValueRules = rules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.value);
+    this.plugin.settings.propertyValueRules = rules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.property && rule.value);
     await this.plugin.saveSettingsAndRefresh();
   }
 
@@ -3042,7 +3400,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       : [];
 
     settings.propertyValueRules = Array.isArray(loadedSettings.propertyValueRules)
-      ? loadedSettings.propertyValueRules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.value)
+      ? loadedSettings.propertyValueRules.map((rule) => cleanPropertyValueRule(rule)).filter((rule) => rule.property && rule.value)
       : [];
 
     settings.iconSearchPaths = Array.isArray(loadedSettings.iconSearchPaths)
@@ -3096,7 +3454,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       .filter((rule) => rule.prefix);
     const propertyValueRules = (this.settings.propertyValueRules || [])
       .map((rule) => cleanPropertyValueRule(rule))
-      .filter((rule) => rule.value);
+      .filter((rule) => rule.property && rule.value);
     const allRules = [...pathRules, ...externalRules, ...propertyValueRules];
     const duplicateRuleCounts = new Map();
     const missingIcons = [];
@@ -3129,7 +3487,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       const duplicateKey = `property-value:${propertyValueRuleKey(rule.property, rule.value)}`;
       duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
 
-      const label = rule.property ? `property:${rule.property}=${rule.value}` : `property:*=${rule.value}`;
+      const label = `property:${rule.property}=${rule.value}`;
       const iconResult = await this.validateRuleIcon(rule, label);
       if (iconResult === 'resolved') resolvedIconCount += 1;
       if (iconResult && iconResult.status === 'missing') missingIcons.push(iconResult);
