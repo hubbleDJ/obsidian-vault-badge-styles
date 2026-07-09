@@ -1,0 +1,9 @@
+{
+  "id": "vault-badge-styles",
+  "name": "Vault Badge Styles",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Apply badge-like icons, colors, and shortened labels to vault folders, files, links, properties, bases, and tabs.",
+  "author": "Max Strometskiy",
+  "isDesktopOnly": false
+}
