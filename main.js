@@ -27,6 +27,7 @@ const TAG_STYLE_FILE_EXPLORER_CLASS = 'mic-tag-style-file-explorer';
 const TAG_STYLE_LIVE_PREVIEW_CLASS = 'mic-tag-style-live-preview-links';
 const TAG_STYLE_PROPERTY_VALUES_CLASS = 'mic-tag-style-property-values';
 const PROPERTY_VALUE_ATTR = 'data-mic-property-value';
+const PROPERTY_VALUE_WRAPPER_ATTR = 'data-mic-property-value-wrapper';
 
 const DEFAULT_SETTINGS = {
   iconSearchPaths: [
@@ -388,6 +389,56 @@ function createIconElement(style, className, size) {
   }
 
   return wrapper;
+}
+
+function isTableLikePropertyValueElement(element) {
+  return element.matches([
+    'td',
+    '[role="gridcell"]',
+    '[role="cell"]',
+    '.base-table-cell',
+    '.table-cell',
+    '.bases-table-cell',
+    '.base-td',
+    '.bases-td',
+    '.base-cell',
+    '.bases-cell',
+    '[data-cell]',
+    '[data-cell-id]',
+  ].join(', '));
+}
+
+function unwrapPropertyValueWrapper(wrapperEl) {
+  const parentEl = wrapperEl.parentElement;
+  if (!parentEl) return;
+
+  while (wrapperEl.firstChild) {
+    parentEl.insertBefore(wrapperEl.firstChild, wrapperEl);
+  }
+  wrapperEl.remove();
+}
+
+function clearPropertyValueWrapperInCell(cellEl) {
+  cellEl.querySelectorAll(`[${PROPERTY_VALUE_WRAPPER_ATTR}="true"]`).forEach((wrapperEl) => {
+    if (wrapperEl instanceof HTMLElement) unwrapPropertyValueWrapper(wrapperEl);
+  });
+}
+
+function ensurePropertyValueTargetElement(valueEl) {
+  if (!isTableLikePropertyValueElement(valueEl)) return valueEl;
+
+  const existingWrapper = valueEl.querySelector(`:scope > [${PROPERTY_VALUE_WRAPPER_ATTR}="true"]`);
+  if (existingWrapper instanceof HTMLElement) return existingWrapper;
+
+  const wrapperEl = document.createElement('span');
+  wrapperEl.setAttribute(PROPERTY_VALUE_WRAPPER_ATTR, 'true');
+
+  while (valueEl.firstChild) {
+    wrapperEl.appendChild(valueEl.firstChild);
+  }
+  valueEl.appendChild(wrapperEl);
+
+  return wrapperEl;
 }
 
 class IconResolver {
@@ -1116,22 +1167,30 @@ class MarkdownLinkRenderer {
     }
 
     const style = this.styleIndex.getEffectiveStyleForPropertyValue(propertyName, value);
+    const targetEl = style ? ensurePropertyValueTargetElement(valueEl) : valueEl;
     if (style) {
-      valueEl.setAttribute(PROPERTY_VALUE_ATTR, 'true');
-      valueEl.setAttribute('data-mic-property-name', propertyName || '');
-      valueEl.setAttribute('data-mic-property-raw-value', value);
+      targetEl.setAttribute(PROPERTY_VALUE_ATTR, 'true');
+      targetEl.setAttribute('data-mic-property-name', propertyName || '');
+      targetEl.setAttribute('data-mic-property-raw-value', value);
     } else {
       valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
       valueEl.removeAttribute('data-mic-property-name');
       valueEl.removeAttribute('data-mic-property-raw-value');
     }
 
-    this.applyStyleVariables(valueEl, style);
-    this.applyIcon(valueEl, style);
+    this.applyStyleVariables(targetEl, style);
+    this.applyIcon(targetEl, style);
   }
 
   clearPropertyValue(valueEl) {
+    const shouldUnwrap = valueEl.getAttribute(PROPERTY_VALUE_WRAPPER_ATTR) === 'true';
+
+    if (isTableLikePropertyValueElement(valueEl)) {
+      clearPropertyValueWrapperInCell(valueEl);
+    }
+
     valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
+    valueEl.removeAttribute(PROPERTY_VALUE_WRAPPER_ATTR);
     valueEl.removeAttribute('data-mic-property-name');
     valueEl.removeAttribute('data-mic-property-raw-value');
     valueEl.classList.remove(COLORED_TEXT_CLASS);
@@ -1139,6 +1198,8 @@ class MarkdownLinkRenderer {
     applyBackgroundVariables(valueEl, null);
     const existing = valueEl.querySelector(`:scope > .${ICON_CLASS}.${LINK_ICON_CLASS}`);
     if (existing) existing.remove();
+
+    if (shouldUnwrap) unwrapPropertyValueWrapper(valueEl);
   }
 
   markExternalLinkContainer(linkEl, active) {
@@ -1350,11 +1411,14 @@ class GenericInternalLinkRenderer {
     const baseRoots = [
       '.workspace-leaf-content[data-type="base"]',
       '.workspace-leaf-content[data-type="bases"]',
+      '.workspace-leaf-content[data-type="base-view"]',
+      '.workspace-leaf-content[data-type="bases-view"]',
       '.base-embed',
       '.bases-embed',
       '.base-view',
       '.bases-view',
     ];
+    const explicitBaseRootSelector = baseRoots.join(', ');
     const baseSelectors = baseRoots.flatMap((root) => [
       `${root} [data-property-value]`,
       `${root} [data-value]`,
@@ -1378,8 +1442,31 @@ class GenericInternalLinkRenderer {
       `${root} .base-cell`,
       `${root} .bases-cell`,
     ]);
+    const genericTableSelectors = [
+      '.workspace-leaf-content [data-property-value]',
+      '.workspace-leaf-content [data-value]',
+      '.workspace-leaf-content [data-property-key]',
+      '.workspace-leaf-content [data-property]',
+      '.workspace-leaf-content [data-property-name]',
+      '.workspace-leaf-content [data-field]',
+      '.workspace-leaf-content [data-field-name]',
+      '.workspace-leaf-content [data-column-key]',
+      '.workspace-leaf-content [role="gridcell"]',
+      '.workspace-leaf-content [role="cell"]',
+      '.workspace-leaf-content td',
+      '.workspace-leaf-content .base-table-cell',
+      '.workspace-leaf-content .table-cell',
+      '.workspace-leaf-content .bases-table-cell',
+      '.workspace-leaf-content .base-td',
+      '.workspace-leaf-content .bases-td',
+      '.workspace-leaf-content .base-cell',
+      '.workspace-leaf-content .bases-cell',
+    ];
 
-    document.querySelectorAll(baseSelectors.join(', ')).forEach((element) => {
+    document.querySelectorAll([...baseSelectors, ...genericTableSelectors].join(', ')).forEach((element) => {
+      const isExplicitBaseElement = Boolean(element.closest(explicitBaseRootSelector));
+      if (!isExplicitBaseElement && element.closest('.markdown-preview-view, .markdown-source-view')) return;
+      if (element.closest('.metadata-property')) return;
       if (!(element instanceof HTMLElement) || !this.isPropertyValueElement(element)) return;
       const value = this.extractPropertyValueText(element);
       if (!value) return;
@@ -1484,7 +1571,7 @@ class GenericInternalLinkRenderer {
     const columnIndex = this.getColumnIndex(cell);
     if (columnIndex < 0) return '';
 
-    const root = cell.closest('table, [role="grid"], .base-table, .bases-table, .base-view, .bases-view, .base-embed, .bases-embed, .workspace-leaf-content[data-type="base"], .workspace-leaf-content[data-type="bases"]');
+    const root = cell.closest('table, [role="grid"], .base-table, .bases-table, .base-view, .bases-view, .base-embed, .bases-embed, .workspace-leaf-content');
     if (!root) return '';
 
     const headerSelectors = [
