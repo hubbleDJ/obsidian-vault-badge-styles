@@ -77,6 +77,7 @@ const DEFAULT_SETTINGS = {
   enableTagStyleFileExplorer: true,
   enableTagStyleLivePreviewLinks: true,
   enableTagStylePropertyValues: true,
+  autoUpdateRulePathsOnRename: true,
   tagBackgroundOpacity: 28,
 };
 
@@ -202,6 +203,37 @@ function setRuleFillBackground(rule, value) {
   } else {
     rule.fillBackground = false;
   }
+}
+
+function renameVaultPath(path, oldPath, newPath, includeChildren) {
+  const normalizedPath = normalizeVaultPath(path).trim();
+  const normalizedOldPath = normalizeVaultPath(oldPath).trim();
+  const normalizedNewPath = normalizeVaultPath(newPath).trim();
+
+  if (!normalizedPath || !normalizedOldPath || !normalizedNewPath || normalizedOldPath === normalizedNewPath) {
+    return null;
+  }
+
+  if (normalizedPath === normalizedOldPath) return normalizedNewPath;
+  if (includeChildren && normalizedPath.startsWith(`${normalizedOldPath}/`)) {
+    return `${normalizedNewPath}${normalizedPath.slice(normalizedOldPath.length)}`;
+  }
+
+  return null;
+}
+
+function renamePathRules(rules, oldPath, newPath, type, includeChildren) {
+  let changed = 0;
+  const nextRules = (Array.isArray(rules) ? rules : []).map((rule) => {
+    const cleanedRule = cleanPathRule(rule, type);
+    const nextPath = renameVaultPath(cleanedRule.path, oldPath, newPath, includeChildren);
+    if (!nextPath) return cleanedRule;
+
+    changed += 1;
+    return cleanPathRule({ ...cleanedRule, path: nextPath }, type);
+  });
+
+  return { rules: nextRules, changed };
 }
 
 function cleanPathRule(rule, forcedType) {
@@ -3003,6 +3035,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     this.addSliderSetting(containerEl, 'Прозрачность фона плашек', 'tagBackgroundOpacity', 'Общая прозрачность фона для ссылок, внешних ссылок, значений свойств и дерева файлов.');
     this.addToggleSetting(containerEl, 'Сокращать пути внутренних ссылок в режиме просмотра', 'enableShortenInternalLinks');
     this.addToggleSetting(containerEl, 'Сокращать вложенные теги в режиме просмотра', 'enableShortenTags');
+    this.addToggleSetting(containerEl, 'Автообновлять пути правил при переименовании файлов и папок', 'autoUpdateRulePathsOnRename', 'Если файл или папка переименованы внутри Obsidian, правила каталогов и файлов будут перенесены на новый путь.');
   }
 
   renderRules(containerEl) {
@@ -3503,7 +3536,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
     this.registerEvent(this.app.metadataCache.on('resolved', () => this.scheduleRebuildAndRefresh()));
     this.registerEvent(this.app.vault.on('create', () => this.scheduleRebuildAndRefresh()));
     this.registerEvent(this.app.vault.on('delete', () => this.scheduleRebuildAndRefresh()));
-    this.registerEvent(this.app.vault.on('rename', () => this.scheduleRebuildAndRefresh()));
+    this.registerEvent(this.app.vault.on('rename', (file, oldPath) => this.handleVaultRename(file, oldPath)));
     this.registerEvent(this.app.workspace.on('layout-change', () => this.refreshRenderers()));
 
     this.addCommand({
@@ -3678,6 +3711,49 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
     } catch (error) {
       console.error(`[${PLUGIN_ID}] Failed to rebuild style index`, error);
       new Notice('Vault Badge Styles: failed to rebuild index. See console.');
+    }
+  }
+
+  async handleVaultRename(file, oldPath) {
+    if (!this.settings.autoUpdateRulePathsOnRename) {
+      this.scheduleRebuildAndRefresh();
+      return;
+    }
+
+    const newPath = normalizeVaultPath(file && file.path);
+    const normalizedOldPath = normalizeVaultPath(oldPath);
+    const isFolderRename = file instanceof TFolder;
+    const folderResult = renamePathRules(
+      this.settings.folderRules,
+      normalizedOldPath,
+      newPath,
+      'folder',
+      isFolderRename
+    );
+    const fileResult = renamePathRules(
+      this.settings.fileRules,
+      normalizedOldPath,
+      newPath,
+      'file',
+      isFolderRename
+    );
+    const changed = folderResult.changed + fileResult.changed;
+
+    if (!changed) {
+      this.scheduleRebuildAndRefresh();
+      return;
+    }
+
+    this.settings.folderRules = folderResult.rules;
+    this.settings.fileRules = fileResult.rules;
+
+    try {
+      await this.saveSettingsAndRefresh();
+      new Notice(`Vault Badge Styles: updated ${changed} rule path${changed === 1 ? '' : 's'} after rename`);
+    } catch (error) {
+      console.error(`[${PLUGIN_ID}] Failed to update rule paths after rename`, error);
+      new Notice('Vault Badge Styles: failed to update rule paths after rename. See console.');
+      this.scheduleRebuildAndRefresh();
     }
   }
 
