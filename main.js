@@ -28,6 +28,26 @@ const TAG_STYLE_LIVE_PREVIEW_CLASS = 'mic-tag-style-live-preview-links';
 const TAG_STYLE_PROPERTY_VALUES_CLASS = 'mic-tag-style-property-values';
 const PROPERTY_VALUE_ATTR = 'data-mic-property-value';
 const PROPERTY_VALUE_WRAPPER_ATTR = 'data-mic-property-value-wrapper';
+const PROPERTY_VALUE_CONTENT_SELECTOR = [
+  '.multi-select-pill-content',
+  '.metadata-property-value-text',
+  '.metadata-property-value-pill-content',
+  '.metadata-link-inner',
+  '.table-cell-wrapper',
+  '.table-cell-content',
+  '.base-table-cell-value',
+  '.bases-table-cell-value',
+].join(', ');
+const PROPERTY_VALUE_CONTROL_SELECTOR = [
+  '.multi-select-pill-remove-button',
+  '.metadata-property-value-remove',
+  '.metadata-link-flair',
+  '.metadata-link-icon',
+  '.metadata-property-value-external-link',
+  '.clickable-icon',
+  'button',
+  'svg',
+].join(', ');
 
 const DEFAULT_SETTINGS = {
   iconSearchPaths: [
@@ -396,6 +416,7 @@ function isTableLikePropertyValueElement(element) {
     'td',
     '[role="gridcell"]',
     '[role="cell"]',
+    '.table-cell-wrapper',
     '.base-table-cell',
     '.table-cell',
     '.bases-table-cell',
@@ -424,19 +445,42 @@ function clearPropertyValueWrapperInCell(cellEl) {
   });
 }
 
+function isPropertyValueControlNode(node) {
+  if (node instanceof HTMLElement) return node.matches(PROPERTY_VALUE_CONTROL_SELECTOR);
+  return node.nodeType === Node.TEXT_NODE && /^[×✕]$/.test(String(node.textContent || '').trim());
+}
+
+function getPropertyValueContentElement(valueEl) {
+  if (valueEl.matches(PROPERTY_VALUE_CONTENT_SELECTOR)) return valueEl;
+
+  const directContent = valueEl.querySelector(`:scope > ${PROPERTY_VALUE_CONTENT_SELECTOR}`);
+  if (directContent instanceof HTMLElement) return directContent;
+
+  return null;
+}
+
 function ensurePropertyValueTargetElement(valueEl) {
-  if (!isTableLikePropertyValueElement(valueEl)) return valueEl;
+  const contentEl = getPropertyValueContentElement(valueEl);
+  if (contentEl) return contentEl;
+
+  const hasSeparateControl = [...valueEl.childNodes].some((node) => isPropertyValueControlNode(node));
+  if (!isTableLikePropertyValueElement(valueEl) && !hasSeparateControl) return valueEl;
 
   const existingWrapper = valueEl.querySelector(`:scope > [${PROPERTY_VALUE_WRAPPER_ATTR}="true"]`);
   if (existingWrapper instanceof HTMLElement) return existingWrapper;
 
   const wrapperEl = document.createElement('span');
   wrapperEl.setAttribute(PROPERTY_VALUE_WRAPPER_ATTR, 'true');
+  const firstControlNode = [...valueEl.childNodes].find((node) => isPropertyValueControlNode(node));
+  const contentNodes = [...valueEl.childNodes].filter((node) => !isPropertyValueControlNode(node));
 
-  while (valueEl.firstChild) {
-    wrapperEl.appendChild(valueEl.firstChild);
+  contentNodes.forEach((node) => wrapperEl.appendChild(node));
+
+  if (firstControlNode) {
+    valueEl.insertBefore(wrapperEl, firstControlNode);
+  } else {
+    valueEl.appendChild(wrapperEl);
   }
-  valueEl.appendChild(wrapperEl);
 
   return wrapperEl;
 }
@@ -1169,17 +1213,28 @@ class MarkdownLinkRenderer {
     const style = this.styleIndex.getEffectiveStyleForPropertyValue(propertyName, value);
     const targetEl = style ? ensurePropertyValueTargetElement(valueEl) : valueEl;
     if (style) {
+      if (targetEl !== valueEl) this.clearPropertyDecoration(valueEl);
       targetEl.setAttribute(PROPERTY_VALUE_ATTR, 'true');
       targetEl.setAttribute('data-mic-property-name', propertyName || '');
       targetEl.setAttribute('data-mic-property-raw-value', value);
     } else {
-      valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
-      valueEl.removeAttribute('data-mic-property-name');
-      valueEl.removeAttribute('data-mic-property-raw-value');
+      this.clearPropertyValue(valueEl);
     }
 
     this.applyStyleVariables(targetEl, style);
     this.applyIcon(targetEl, style);
+  }
+
+  clearPropertyDecoration(valueEl) {
+    valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
+    valueEl.removeAttribute('data-mic-property-name');
+    valueEl.removeAttribute('data-mic-property-raw-value');
+    valueEl.classList.remove(COLORED_TEXT_CLASS);
+    valueEl.style.removeProperty('--mic-text-color');
+    applyBackgroundVariables(valueEl, null);
+
+    const existing = valueEl.querySelector(`:scope > .${ICON_CLASS}.${LINK_ICON_CLASS}`);
+    if (existing) existing.remove();
   }
 
   clearPropertyValue(valueEl) {
@@ -1189,15 +1244,11 @@ class MarkdownLinkRenderer {
       clearPropertyValueWrapperInCell(valueEl);
     }
 
-    valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
     valueEl.removeAttribute(PROPERTY_VALUE_WRAPPER_ATTR);
-    valueEl.removeAttribute('data-mic-property-name');
-    valueEl.removeAttribute('data-mic-property-raw-value');
-    valueEl.classList.remove(COLORED_TEXT_CLASS);
-    valueEl.style.removeProperty('--mic-text-color');
-    applyBackgroundVariables(valueEl, null);
-    const existing = valueEl.querySelector(`:scope > .${ICON_CLASS}.${LINK_ICON_CLASS}`);
-    if (existing) existing.remove();
+    this.clearPropertyDecoration(valueEl);
+    valueEl.querySelectorAll(`[${PROPERTY_VALUE_ATTR}="true"]`).forEach((styledEl) => {
+      if (styledEl instanceof HTMLElement) this.clearPropertyDecoration(styledEl);
+    });
 
     if (shouldUnwrap) unwrapPropertyValueWrapper(valueEl);
   }
@@ -1391,6 +1442,7 @@ class GenericInternalLinkRenderer {
     document.querySelectorAll('.metadata-property').forEach((propertyEl) => {
       const propertyName = this.getMetadataPropertyName(propertyEl);
       const valueSelectors = [
+        '.metadata-property-value .multi-select-pill-content',
         '.metadata-property-value .multi-select-pill',
         '.metadata-property-value .metadata-link',
         '.metadata-property-value a.internal-link',
@@ -1422,7 +1474,9 @@ class GenericInternalLinkRenderer {
     const baseSelectors = baseRoots.flatMap((root) => [
       `${root} [data-property-value]`,
       `${root} [data-value]`,
+      `${root} .table-cell-wrapper`,
       `${root} .multi-select-pill`,
+      `${root} .multi-select-pill-content`,
       `${root} .metadata-property-value-pill`,
       `${root} .metadata-property-value-text`,
       `${root} [data-property-key]`,
@@ -1445,6 +1499,8 @@ class GenericInternalLinkRenderer {
     const genericTableSelectors = [
       '.workspace-leaf-content [data-property-value]',
       '.workspace-leaf-content [data-value]',
+      '.workspace-leaf-content .table-cell-wrapper',
+      '.workspace-leaf-content .multi-select-pill-content',
       '.workspace-leaf-content [data-property-key]',
       '.workspace-leaf-content [data-property]',
       '.workspace-leaf-content [data-property-name]',
@@ -1503,7 +1559,7 @@ class GenericInternalLinkRenderer {
 
   isPropertyValueElement(element) {
     if (element.matches('input, textarea, select, button, svg, path')) return false;
-    if (element.matches('th, [role="columnheader"], .base-table-header-cell, .bases-table-header-cell, .base-th, .bases-th, .table-header-cell')) return false;
+    if (element.matches('th, [role="columnheader"], .bases-table-header-name, .base-table-header-cell, .bases-table-header-cell, .base-th, .bases-th, .table-header-cell')) return false;
     if (element.matches('a, [data-href], [data-url], .internal-link, .external-link, .metadata-link')) return false;
     if (element.closest('.modal, .suggestion-container, .menu, .prompt, .nav-files-container')) return false;
     if (element.classList.contains(ICON_CLASS)) return false;
@@ -1568,15 +1624,13 @@ class GenericInternalLinkRenderer {
     const directName = this.getPropertyNameFromElementAttributes(cell);
     if (directName) return directName;
 
-    const columnIndex = this.getColumnIndex(cell);
-    if (columnIndex < 0) return '';
-
     const root = cell.closest('table, [role="grid"], .base-table, .bases-table, .base-view, .bases-view, .base-embed, .bases-embed, .workspace-leaf-content');
     if (!root) return '';
 
     const headerSelectors = [
       'thead th',
       '[role="columnheader"]',
+      '.bases-table-header-name',
       '.base-table-header-cell',
       '.bases-table-header-cell',
       '.base-th',
@@ -1587,8 +1641,41 @@ class GenericInternalLinkRenderer {
     const headers = [...root.querySelectorAll(headerSelectors.join(', '))]
       .filter((header) => header instanceof HTMLElement);
 
-    const header = headers.find((headerEl) => this.getColumnIndex(headerEl) === columnIndex) || headers[columnIndex];
-    return header ? normalizePropertyHeaderText(this.extractPropertyValueText(header)) : '';
+    const headerByGeometry = this.getHeaderByGeometry(cell, headers);
+    if (headerByGeometry) return normalizePropertyHeaderText(this.extractPropertyValueText(headerByGeometry));
+
+    const columnIndex = this.getColumnIndex(cell);
+    const headerByIndex = columnIndex >= 0
+      ? headers.find((headerEl) => this.getColumnIndex(headerEl) === columnIndex) || headers[columnIndex]
+      : null;
+    return headerByIndex ? normalizePropertyHeaderText(this.extractPropertyValueText(headerByIndex)) : '';
+  }
+
+  getHeaderByGeometry(cell, headers) {
+    if (!headers.length) return null;
+
+    const cellRect = cell.getBoundingClientRect();
+    if (!cellRect.width && !cellRect.height) return null;
+
+    const cellCenterX = cellRect.left + cellRect.width / 2;
+    let bestHeader = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+
+    headers.forEach((header) => {
+      const headerRect = header.getBoundingClientRect();
+      if (!headerRect.width && !headerRect.height) return;
+
+      const containsCenter = headerRect.left <= cellCenterX && cellCenterX <= headerRect.right;
+      const headerCenterX = headerRect.left + headerRect.width / 2;
+      const distance = containsCenter ? 0 : Math.abs(headerCenterX - cellCenterX);
+
+      if (distance < bestDistance) {
+        bestHeader = header;
+        bestDistance = distance;
+      }
+    });
+
+    return bestHeader;
   }
 
   getPropertyNameFromElementAttributes(element) {
@@ -1619,6 +1706,7 @@ class GenericInternalLinkRenderer {
       'td',
       '[role="gridcell"]',
       '[role="cell"]',
+      '.table-cell-wrapper',
       '.base-table-cell',
       '.table-cell',
       '.bases-table-cell',
@@ -1663,6 +1751,9 @@ class GenericInternalLinkRenderer {
       `.${ICON_CLASS}`,
       '.multi-select-pill-remove-button',
       '.metadata-property-value-remove',
+      '.metadata-link-flair',
+      '.metadata-link-icon',
+      '.metadata-property-value-external-link',
       '.metadata-property-icon',
       '.metadata-property-warning-icon',
       '.clickable-icon',
