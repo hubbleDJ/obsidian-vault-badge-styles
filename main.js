@@ -14,6 +14,8 @@ const PLUGIN_ID = 'vault-badge-styles';
 const PLUGIN_NAME = 'Vault Badge Styles';
 const CONFIG_EXPORT_PATH = 'vault-badge-styles.config.json';
 const CONFIG_EXPORT_VERSION = 1;
+const ICON_FILE_EXTENSIONS = ['svg', 'png', 'webp', 'jpg', 'jpeg'];
+const ICON_FILE_EXTENSION_RE = /\.(svg|png|webp|jpe?g)$/i;
 const ICON_CLASS = 'mic-icon';
 const FILE_EXPLORER_ICON_CLASS = 'mic-file-explorer-icon';
 const LINK_ICON_CLASS = 'mic-link-icon';
@@ -97,6 +99,15 @@ function basenameWithoutExtension(path) {
   const filename = normalizeVaultPath(path).split('/').pop() || '';
   const extensionIndex = filename.lastIndexOf('.');
   return extensionIndex > 0 ? filename.slice(0, extensionIndex) : filename;
+}
+
+function hasIconFileExtension(path) {
+  return ICON_FILE_EXTENSION_RE.test(normalizeVaultPath(path));
+}
+
+function getIconFileExtension(path) {
+  const match = normalizeVaultPath(path).match(ICON_FILE_EXTENSION_RE);
+  return match ? match[1].toLowerCase() : '';
 }
 
 function dirname(path) {
@@ -543,16 +554,26 @@ class IconResolver {
     const normalized = normalizeVaultPath(iconValue);
     if (!normalized) return [];
 
-    if (normalized.includes('/') || normalized.endsWith('.svg')) {
-      return [normalized.endsWith('.svg') ? normalized : `${normalized}.svg`];
-    }
-
     const iconSearchPaths = Array.isArray(this.settings.iconSearchPaths)
       ? this.settings.iconSearchPaths
       : DEFAULT_SETTINGS.iconSearchPaths;
 
+    const hasExplicitExtension = hasIconFileExtension(normalized);
+
+    if (normalized.includes('/')) {
+      return [hasExplicitExtension ? normalized : `${normalized}.svg`];
+    }
+
     return iconSearchPaths.flatMap((searchPath) => {
       const base = normalizeVaultPath(searchPath);
+      if (hasExplicitExtension) {
+        const iconName = basenameWithoutExtension(normalized);
+        return [
+          `${base}/${normalized}`,
+          `${base}/${iconName}/${normalized}`,
+        ];
+      }
+
       return [
         `${base}/${normalized}.svg`,
         `${base}/${normalized}/${normalized}.svg`,
@@ -2114,10 +2135,14 @@ class IconNameSuggest {
     const iconNames = new Set();
 
     for (const file of this.app.vault.getFiles()) {
-      if (file.extension !== 'svg') continue;
+      const extension = getIconFileExtension(file.path);
+      if (!ICON_FILE_EXTENSIONS.includes(extension)) continue;
       const parentPath = dirname(file.path);
-      if (!iconSearchPaths.has(parentPath)) continue;
-      const iconName = basenameWithoutExtension(file.path);
+      const parentName = folderName(parentPath);
+      const parentParentPath = dirname(parentPath);
+      const fileBaseName = basenameWithoutExtension(file.path);
+      if (!iconSearchPaths.has(parentPath) && !(iconSearchPaths.has(parentParentPath) && parentName === fileBaseName)) continue;
+      const iconName = file.name;
       if (!normalizedQuery || iconName.toLowerCase().includes(normalizedQuery)) {
         iconNames.add(iconName);
       }
@@ -2471,10 +2496,10 @@ class RuleEditModal extends Modal {
 
     new Setting(contentEl)
       .setName('Источник иконки')
-      .setDesc('SVG ищется в папках поиска. Emoji / текст вставляется как есть.')
+      .setDesc('Иконка ищется в папках поиска. Emoji / текст вставляется как есть.')
       .addDropdown((dropdown) => {
         dropdown
-          .addOption('svg', 'SVG из папки')
+          .addOption('svg', 'Иконка из папки')
           .addOption('text', 'Emoji / текст')
           .setValue(normalizeIconSource(this.rule))
           .onChange((value) => {
@@ -2489,10 +2514,10 @@ class RuleEditModal extends Modal {
       .setName(iconSource === 'text' ? 'Emoji / текст' : 'Иконка')
       .setDesc(iconSource === 'text'
         ? 'Можно вставить emoji или любой короткий текст.'
-        : 'Короткое имя SVG из папок поиска, например golang. Можно указать и путь до SVG.')
+        : 'Имя файла иконки из папок поиска, например golang.svg. Без расширения по старой совместимости ищется .svg. Можно указать путь до файла.')
       .addText((text) => {
         text
-          .setPlaceholder(iconSource === 'text' ? '🔥' : 'golang')
+          .setPlaceholder(iconSource === 'text' ? '🔥' : 'golang.svg')
           .setValue(this.rule.icon || '')
           .onChange((value) => {
             this.rule.icon = value.trim();
@@ -2611,10 +2636,10 @@ class ExternalLinkRuleEditModal extends Modal {
 
     new Setting(contentEl)
       .setName('Источник иконки')
-      .setDesc('SVG ищется в папках поиска. Emoji / текст вставляется как есть.')
+      .setDesc('Иконка ищется в папках поиска. Emoji / текст вставляется как есть.')
       .addDropdown((dropdown) => {
         dropdown
-          .addOption('svg', 'SVG из папки')
+          .addOption('svg', 'Иконка из папки')
           .addOption('text', 'Emoji / текст')
           .setValue(normalizeIconSource(this.rule))
           .onChange((value) => {
@@ -2629,10 +2654,10 @@ class ExternalLinkRuleEditModal extends Modal {
       .setName(iconSource === 'text' ? 'Emoji / текст' : 'Иконка')
       .setDesc(iconSource === 'text'
         ? 'Можно вставить emoji или любой короткий текст.'
-        : 'Короткое имя SVG из папок поиска, например telegram. Можно указать и путь до SVG.')
+        : 'Имя файла иконки из папок поиска, например telegram.svg. Без расширения по старой совместимости ищется .svg. Можно указать путь до файла.')
       .addText((text) => {
         text
-          .setPlaceholder(iconSource === 'text' ? '↗' : 'telegram')
+          .setPlaceholder(iconSource === 'text' ? '↗' : 'telegram.svg')
           .setValue(this.rule.icon || '')
           .onChange((value) => {
             this.rule.icon = value.trim();
@@ -2810,10 +2835,10 @@ class PropertyValueRuleEditModal extends Modal {
 
     new Setting(contentEl)
       .setName('Источник иконки')
-      .setDesc('SVG ищется в папках поиска. Emoji / текст вставляется как есть.')
+      .setDesc('Иконка ищется в папках поиска. Emoji / текст вставляется как есть.')
       .addDropdown((dropdown) => {
         dropdown
-          .addOption('svg', 'SVG из папки')
+          .addOption('svg', 'Иконка из папки')
           .addOption('text', 'Emoji / текст')
           .setValue(normalizeIconSource(this.rule))
           .onChange((value) => {
@@ -2828,10 +2853,10 @@ class PropertyValueRuleEditModal extends Modal {
       .setName(iconSource === 'text' ? 'Emoji / текст' : 'Иконка')
       .setDesc(iconSource === 'text'
         ? 'Можно вставить emoji или любой короткий текст.'
-        : 'Короткое имя SVG из папок поиска, например task. Можно указать и путь до SVG.')
+        : 'Имя файла иконки из папок поиска, например task.svg. Без расширения по старой совместимости ищется .svg. Можно указать путь до файла.')
       .addText((text) => {
         text
-          .setPlaceholder(iconSource === 'text' ? '✅' : 'task')
+          .setPlaceholder(iconSource === 'text' ? '✅' : 'task.svg')
           .setValue(this.rule.icon || '')
           .onChange((value) => {
             this.rule.icon = value.trim();
