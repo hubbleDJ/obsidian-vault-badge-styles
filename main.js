@@ -281,7 +281,10 @@ function flattenPropertyValues(value) {
 }
 
 function normalizePropertyHeaderText(value) {
-  const normalized = normalizePropertyName(value).replace(/[↕↑↓]+/g, '').trim();
+  const normalized = normalizePropertyName(value)
+    .replace(/[↕↑↓]+/g, '')
+    .replace(/^(?:note|file)\./i, '')
+    .trim();
   return normalized.replace(/^[^A-Za-zА-Яа-я0-9_#]+/u, '').trim();
 }
 
