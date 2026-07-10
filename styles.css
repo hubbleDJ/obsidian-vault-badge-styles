@@ -418,6 +418,12 @@ a.external-link[data-mic-external-link='true']::after {
   margin-right: 0.35em;
 }
 
+.mic-setting-inline-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  white-space: nowrap;
+}
+
 .mic-rule-badge {
   display: inline-flex;
   align-items: center;

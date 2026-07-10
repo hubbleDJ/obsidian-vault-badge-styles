@@ -187,6 +187,23 @@ function applyBackgroundVariables(element, color) {
   }
 }
 
+function applyStyleBackgroundVariables(element, style) {
+  if (!style || !style.backgroundColor) {
+    applyBackgroundVariables(element, null);
+    return;
+  }
+
+  applyBackgroundVariables(element, style.fillBackground === false ? 'transparent' : style.backgroundColor);
+}
+
+function setRuleFillBackground(rule, value) {
+  if (value) {
+    delete rule.fillBackground;
+  } else {
+    rule.fillBackground = false;
+  }
+}
+
 function cleanPathRule(rule, forcedType) {
   const sourceRule = rule || {};
   const normalizedPath = normalizeVaultPath(sourceRule.path).trim();
@@ -208,6 +225,7 @@ function cleanPathRule(rule, forcedType) {
   } else if (sourceRule.textColor) {
     nextRule.backgroundColor = String(sourceRule.textColor).trim();
   }
+  if (sourceRule.fillBackground === false) nextRule.fillBackground = false;
   if (type === 'folder') nextRule.cascade = Boolean(sourceRule.cascade);
 
   return nextRule;
@@ -233,6 +251,7 @@ function cleanExternalLinkRule(rule) {
   } else if (sourceRule.textColor) {
     nextRule.backgroundColor = String(sourceRule.textColor).trim();
   }
+  if (sourceRule.fillBackground === false) nextRule.fillBackground = false;
 
   return nextRule;
 }
@@ -278,6 +297,7 @@ function cleanPropertyValueRule(rule) {
   } else if (sourceRule.textColor) {
     nextRule.backgroundColor = String(sourceRule.textColor).trim();
   }
+  if (sourceRule.fillBackground === false) nextRule.fillBackground = false;
 
   return nextRule;
 }
@@ -719,6 +739,7 @@ class StyleIndex {
     const iconSource = normalizeIconSource(rule);
     const textColor = rule.textColor ? String(rule.textColor) : undefined;
     const backgroundColor = rule.backgroundColor ? String(rule.backgroundColor) : undefined;
+    const fillBackground = rule.fillBackground !== false;
     const cascade = Boolean(rule.cascade);
 
     if (!icon && !textColor && !backgroundColor && !cascade) return null;
@@ -738,6 +759,7 @@ class StyleIndex {
       iconVaultPath: iconInfo.vaultPath,
       textColor,
       backgroundColor,
+      fillBackground,
       cascade,
     };
   }
@@ -785,6 +807,7 @@ class StyleIndex {
       iconVaultPath: iconSource ? iconSource.iconVaultPath : undefined,
       textColor: textColorSource ? textColorSource.textColor : undefined,
       backgroundColor: backgroundColorSource ? backgroundColorSource.backgroundColor : undefined,
+      fillBackground: backgroundColorSource ? backgroundColorSource.fillBackground !== false : undefined,
       sourcePath: (iconSource || textColorSource || backgroundColorSource).sourcePath,
       rulePath: (iconSource || textColorSource || backgroundColorSource).rulePath,
       ruleType: (iconSource || textColorSource || backgroundColorSource).ruleType,
@@ -852,6 +875,7 @@ class StyleIndex {
       resolvedIconPath: style ? style.iconVaultPath || '' : '',
       textColor: style ? style.textColor || '' : '',
       backgroundColor: style ? style.backgroundColor || '' : '',
+      fillBackground: style ? style.fillBackground !== false : '',
       inherited: style ? inherited : '',
       reason: this.getMatchReason(normalized, style, sources),
     };
@@ -964,11 +988,7 @@ class FileExplorerRenderer {
       contentEl.style.removeProperty('--mic-text-color');
     }
 
-    if (style && style.backgroundColor) {
-      applyBackgroundVariables(contentEl, style.backgroundColor);
-    } else {
-      applyBackgroundVariables(contentEl, null);
-    }
+    applyStyleBackgroundVariables(contentEl, style);
   }
 
   applyIcon(titleEl, contentEl, style) {
@@ -1115,11 +1135,7 @@ class TabHeaderRenderer {
       titleEl.style.removeProperty('--mic-text-color');
     }
 
-    if (style && style.backgroundColor) {
-      applyBackgroundVariables(titleEl, style.backgroundColor);
-    } else {
-      applyBackgroundVariables(titleEl, null);
-    }
+    applyStyleBackgroundVariables(titleEl, style);
   }
 
   applyIcon(headerEl, containerEl, titleEl, style) {
@@ -1339,11 +1355,7 @@ class MarkdownLinkRenderer {
       linkEl.style.removeProperty('--mic-text-color');
     }
 
-    if (style && style.backgroundColor) {
-      applyBackgroundVariables(linkEl, style.backgroundColor);
-    } else {
-      applyBackgroundVariables(linkEl, null);
-    }
+    applyStyleBackgroundVariables(linkEl, style);
   }
 
   applyIcon(linkEl, style) {
@@ -1824,6 +1836,7 @@ function renderDiagnosticsTable(containerEl, rows) {
     'resolvedIconPath',
     'textColor',
     'backgroundColor',
+    'fillBackground',
     'inherited',
     'reason',
   ];
@@ -2540,7 +2553,7 @@ class RuleEditModal extends Modal {
           });
       });
 
-    new Setting(contentEl)
+    const backgroundSetting = new Setting(contentEl)
       .setName('Цвет фона')
       .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
       .addColorPicker((color) => {
@@ -2550,6 +2563,14 @@ class RuleEditModal extends Modal {
             this.rule.backgroundColor = value;
           });
       });
+    backgroundSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Заливать фон' });
+    backgroundSetting.addToggle((toggle) => {
+      toggle
+        .setValue(this.rule.fillBackground !== false)
+        .onChange((value) => {
+          setRuleFillBackground(this.rule, value);
+        });
+    });
 
     if (normalizeRuleType(this.rule, this.rule.path) === 'folder') {
       new Setting(contentEl)
@@ -2680,7 +2701,7 @@ class ExternalLinkRuleEditModal extends Modal {
           });
       });
 
-    new Setting(contentEl)
+    const backgroundSetting = new Setting(contentEl)
       .setName('Цвет фона')
       .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
       .addColorPicker((color) => {
@@ -2690,6 +2711,14 @@ class ExternalLinkRuleEditModal extends Modal {
             this.rule.backgroundColor = value;
           });
       });
+    backgroundSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Заливать фон' });
+    backgroundSetting.addToggle((toggle) => {
+      toggle
+        .setValue(this.rule.fillBackground !== false)
+        .onChange((value) => {
+          setRuleFillBackground(this.rule, value);
+        });
+    });
 
     new Setting(contentEl)
       .addButton((button) => {
@@ -2879,7 +2908,7 @@ class PropertyValueRuleEditModal extends Modal {
           });
       });
 
-    new Setting(contentEl)
+    const backgroundSetting = new Setting(contentEl)
       .setName('Цвет фона')
       .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
       .addColorPicker((color) => {
@@ -2889,6 +2918,14 @@ class PropertyValueRuleEditModal extends Modal {
             this.rule.backgroundColor = value;
           });
       });
+    backgroundSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Заливать фон' });
+    backgroundSetting.addToggle((toggle) => {
+      toggle
+        .setValue(this.rule.fillBackground !== false)
+        .onChange((value) => {
+          setRuleFillBackground(this.rule, value);
+        });
+    });
 
     new Setting(contentEl)
       .addButton((button) => {
@@ -3185,6 +3222,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       rule.icon,
       rule.textColor,
       rule.backgroundColor,
+      rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
       rule.cascade ? 'каскадно cascade recursive вложенные' : '',
     ]);
   }
@@ -3197,6 +3235,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       rule.icon,
       rule.textColor,
       rule.backgroundColor,
+      rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
     ]);
   }
 
@@ -3210,6 +3249,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       rule.icon,
       rule.textColor,
       rule.backgroundColor,
+      rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
     ]);
   }
 
@@ -3323,9 +3363,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       preview.classList.add(COLORED_TEXT_CLASS);
       preview.style.setProperty('--mic-text-color', style.textColor);
     }
-    if (style && style.backgroundColor) {
-      applyBackgroundVariables(preview, style.backgroundColor);
-    }
+    applyStyleBackgroundVariables(preview, style);
     if (hasRenderableIcon(style)) {
       preview.appendChild(createIconElement(style, 'mic-rule-preview-icon', this.plugin.settings.linkIconSize));
     }
