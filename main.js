@@ -290,6 +290,10 @@ function addHexColorSetting(containerEl, options) {
     });
 }
 
+function clonePlainRule(rule) {
+  return JSON.parse(JSON.stringify(rule || {}));
+}
+
 function setRuleFillBackground(rule, value) {
   if (value) {
     delete rule.fillBackground;
@@ -3497,6 +3501,9 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     this.addIconButton(actions, 'arrow-down', 'Вниз', index === rules.length - 1, async () => {
       await this.movePathRule(key, type, index, 1);
     });
+    this.addIconButton(actions, 'copy', 'Скопировать', false, async () => {
+      await this.duplicatePathRule(key, type, index);
+    });
     this.addIconButton(actions, 'pencil', 'Редактировать', false, () => {
         new RuleEditModal(this.app, this.plugin, rule, async (nextRule) => {
           const nextRules = [...rules];
@@ -3531,6 +3538,9 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     this.addIconButton(actions, 'arrow-down', 'Вниз', index === rules.length - 1, async () => {
       await this.moveExternalLinkRule(index, 1);
     });
+    this.addIconButton(actions, 'copy', 'Скопировать', false, async () => {
+      await this.duplicateExternalLinkRule(index);
+    });
     this.addIconButton(actions, 'pencil', 'Редактировать', false, () => {
       new ExternalLinkRuleEditModal(this.app, this.plugin, rule, async (nextRule) => {
         const nextRules = [...rules];
@@ -3563,6 +3573,9 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     });
     this.addIconButton(actions, 'arrow-down', 'Вниз', index === rules.length - 1, async () => {
       await this.movePropertyValueRule(index, 1);
+    });
+    this.addIconButton(actions, 'copy', 'Скопировать', false, async () => {
+      await this.duplicatePropertyValueRule(index);
     });
     this.addIconButton(actions, 'pencil', 'Редактировать', false, () => {
       new PropertyValueRuleEditModal(this.app, this.plugin, rule, async (nextRule) => {
@@ -3598,6 +3611,44 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       .setTooltip(tooltip)
       .setDisabled(disabled)
       .onClick(callback);
+  }
+
+  async duplicatePathRule(key, type, index) {
+    const rules = (this.plugin.settings[key] || []).map((rule) => cleanPathRule(rule, type));
+    if (!rules[index]) return;
+
+    const nextRules = [...rules];
+    nextRules.splice(index + 1, 0, cleanPathRule(clonePlainRule(rules[index]), type));
+
+    await this.savePathRules(key, type, nextRules);
+    new Notice('Правило скопировано');
+    this.display();
+  }
+
+  async duplicateExternalLinkRule(index) {
+    const rules = (this.plugin.settings.externalLinkRules || []).map((rule) => cleanExternalLinkRule(rule));
+    if (!rules[index]) return;
+
+    const nextRules = [...rules];
+    nextRules.splice(index + 1, 0, cleanExternalLinkRule(clonePlainRule(rules[index])));
+
+    await this.saveExternalLinkRules(nextRules);
+    new Notice('Правило скопировано');
+    this.display();
+  }
+
+  async duplicatePropertyValueRule(index) {
+    const rules = (this.plugin.settings.propertyValueRules || [])
+      .map((rule) => cleanPropertyValueRule(rule))
+      .filter((rule) => rule.property && rule.value);
+    if (!rules[index]) return;
+
+    const nextRules = [...rules];
+    nextRules.splice(index + 1, 0, cleanPropertyValueRule(clonePlainRule(rules[index])));
+
+    await this.savePropertyValueRules(nextRules);
+    new Notice('Правило скопировано');
+    this.display();
   }
 
   async movePathRule(key, type, index, direction) {
