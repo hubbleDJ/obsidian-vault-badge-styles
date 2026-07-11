@@ -17,6 +17,23 @@
   background: transparent;
 }
 
+.mic-icon-mask-source {
+  color: var(--mic-icon-color, currentColor);
+}
+
+.mic-icon-mask {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-color: var(--mic-icon-color, currentColor);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
 .mic-icon.mic-icon-text-source {
   width: auto;
   min-width: var(--mic-icon-size, 1.15em);

@@ -28,6 +28,9 @@ const TAG_STYLE_EXTERNAL_LINKS_CLASS = 'mic-tag-style-external-links';
 const TAG_STYLE_FILE_EXPLORER_CLASS = 'mic-tag-style-file-explorer';
 const TAG_STYLE_LIVE_PREVIEW_CLASS = 'mic-tag-style-live-preview-links';
 const TAG_STYLE_PROPERTY_VALUES_CLASS = 'mic-tag-style-property-values';
+const ICON_COLOR_MODE_ORIGINAL = 'original';
+const ICON_COLOR_MODE_TEXT = 'text';
+const ICON_COLOR_MODE_CUSTOM = 'custom';
 const PROPERTY_VALUE_ATTR = 'data-mic-property-value';
 const PROPERTY_VALUE_WRAPPER_ATTR = 'data-mic-property-value-wrapper';
 const PROPERTY_VALUE_CONTENT_SELECTOR = [
@@ -145,6 +148,21 @@ function normalizeIconSource(rule) {
   return 'svg';
 }
 
+function normalizeIconColorMode(rule) {
+  const mode = String(rule.iconColorMode || '').toLowerCase();
+  if (mode === ICON_COLOR_MODE_TEXT || mode === ICON_COLOR_MODE_CUSTOM) return mode;
+  if (rule && rule.colorizeIcon === true) {
+    return rule.iconColor ? ICON_COLOR_MODE_CUSTOM : ICON_COLOR_MODE_TEXT;
+  }
+  return ICON_COLOR_MODE_ORIGINAL;
+}
+
+function canRuleIconUseColor(rule) {
+  if (normalizeIconSource(rule) !== 'svg') return false;
+  const extension = getIconFileExtension(rule.icon || '');
+  return !extension || extension === 'svg';
+}
+
 function normalizeOpacity(value) {
   const numberValue = Number(value);
   if (!Number.isFinite(numberValue)) return DEFAULT_SETTINGS.tagBackgroundOpacity;
@@ -205,6 +223,71 @@ function setRuleFillBackground(rule, value) {
   }
 }
 
+function setRuleIconColorMode(rule, value) {
+  const mode = normalizeIconColorMode({ iconColorMode: value });
+  if (mode === ICON_COLOR_MODE_ORIGINAL) {
+    delete rule.iconColorMode;
+    delete rule.iconColor;
+    return;
+  }
+
+  rule.iconColorMode = mode;
+  if (mode === ICON_COLOR_MODE_CUSTOM && !rule.iconColor) {
+    rule.iconColor = rule.textColor || '#FFFFFF';
+  }
+  if (mode !== ICON_COLOR_MODE_CUSTOM) {
+    delete rule.iconColor;
+  }
+}
+
+function isSvgIconStyle(style) {
+  if (!style || style.iconSource === 'text') return false;
+  const sourcePath = style.iconVaultPath || style.icon || '';
+  return getIconFileExtension(sourcePath) === 'svg';
+}
+
+function getEffectiveIconColor(style) {
+  if (!isSvgIconStyle(style)) return null;
+  const mode = normalizeIconColorMode(style);
+  if (mode === ICON_COLOR_MODE_TEXT) return style.textColor || 'currentColor';
+  if (mode === ICON_COLOR_MODE_CUSTOM) return style.iconColor || style.textColor || null;
+  return null;
+}
+
+function addIconColorSettings(containerEl, rule, rerender) {
+  if (!canRuleIconUseColor(rule)) return;
+
+  const mode = normalizeIconColorMode(rule);
+
+  new Setting(containerEl)
+    .setName('Цвет иконки')
+    .setDesc('Для SVG можно оставить оригинал, взять цвет текста или задать отдельный цвет. PNG/WebP/JPG остаются в оригинальном виде.')
+    .addDropdown((dropdown) => {
+      dropdown
+        .addOption(ICON_COLOR_MODE_ORIGINAL, 'Оригинальный')
+        .addOption(ICON_COLOR_MODE_TEXT, 'Как цвет текста')
+        .addOption(ICON_COLOR_MODE_CUSTOM, 'Свой цвет')
+        .setValue(mode)
+        .onChange((value) => {
+          setRuleIconColorMode(rule, value);
+          rerender();
+        });
+    });
+
+  if (mode === ICON_COLOR_MODE_CUSTOM) {
+    new Setting(containerEl)
+      .setName('Цвет SVG-иконки')
+      .setDesc('Одноцветная перекраска SVG через маску. Сложные многоцветные SVG лучше оставлять в оригинальном режиме.')
+      .addColorPicker((color) => {
+        color
+          .setValue(rule.iconColor || rule.textColor || '#FFFFFF')
+          .onChange((value) => {
+            rule.iconColor = value;
+          });
+      });
+  }
+}
+
 function renameVaultPath(path, oldPath, newPath, includeChildren) {
   const normalizedPath = normalizeVaultPath(path).trim();
   const normalizedOldPath = normalizeVaultPath(oldPath).trim();
@@ -258,6 +341,13 @@ function cleanPathRule(rule, forcedType) {
     nextRule.backgroundColor = String(sourceRule.textColor).trim();
   }
   if (sourceRule.fillBackground === false) nextRule.fillBackground = false;
+  const iconColorMode = normalizeIconColorMode(sourceRule);
+  if (canRuleIconUseColor(sourceRule) && iconColorMode !== ICON_COLOR_MODE_ORIGINAL) {
+    nextRule.iconColorMode = iconColorMode;
+    if (iconColorMode === ICON_COLOR_MODE_CUSTOM && sourceRule.iconColor) {
+      nextRule.iconColor = String(sourceRule.iconColor).trim();
+    }
+  }
   if (type === 'folder') nextRule.cascade = Boolean(sourceRule.cascade);
 
   return nextRule;
@@ -284,6 +374,13 @@ function cleanExternalLinkRule(rule) {
     nextRule.backgroundColor = String(sourceRule.textColor).trim();
   }
   if (sourceRule.fillBackground === false) nextRule.fillBackground = false;
+  const iconColorMode = normalizeIconColorMode(sourceRule);
+  if (canRuleIconUseColor(sourceRule) && iconColorMode !== ICON_COLOR_MODE_ORIGINAL) {
+    nextRule.iconColorMode = iconColorMode;
+    if (iconColorMode === ICON_COLOR_MODE_CUSTOM && sourceRule.iconColor) {
+      nextRule.iconColor = String(sourceRule.iconColor).trim();
+    }
+  }
 
   return nextRule;
 }
@@ -330,6 +427,13 @@ function cleanPropertyValueRule(rule) {
     nextRule.backgroundColor = String(sourceRule.textColor).trim();
   }
   if (sourceRule.fillBackground === false) nextRule.fillBackground = false;
+  const iconColorMode = normalizeIconColorMode(sourceRule);
+  if (canRuleIconUseColor(sourceRule) && iconColorMode !== ICON_COLOR_MODE_ORIGINAL) {
+    nextRule.iconColorMode = iconColorMode;
+    if (iconColorMode === ICON_COLOR_MODE_CUSTOM && sourceRule.iconColor) {
+      nextRule.iconColor = String(sourceRule.iconColor).trim();
+    }
+  }
 
   return nextRule;
 }
@@ -451,7 +555,7 @@ function hasRenderableIcon(style) {
 function getIconSignature(style) {
   if (!hasRenderableIcon(style)) return '';
   if (style.iconSource === 'text') return `text:${style.icon}`;
-  return `svg:${style.iconPath}`;
+  return `file:${style.iconPath}:${normalizeIconColorMode(style)}:${getEffectiveIconColor(style) || ''}`;
 }
 
 function createIconElement(style, className, size) {
@@ -466,6 +570,15 @@ function createIconElement(style, className, size) {
     textIcon.classList.add('mic-text-icon');
     textIcon.textContent = style.icon;
     wrapper.appendChild(textIcon);
+  } else if (getEffectiveIconColor(style)) {
+    wrapper.classList.add('mic-icon-mask-source');
+    wrapper.style.setProperty('--mic-icon-color', getEffectiveIconColor(style));
+    const mask = document.createElement('span');
+    mask.classList.add('mic-icon-mask');
+    const iconUrl = String(style.iconPath || '').replace(/"/g, '\\"');
+    mask.style.setProperty('-webkit-mask-image', `url("${iconUrl}")`);
+    mask.style.setProperty('mask-image', `url("${iconUrl}")`);
+    wrapper.appendChild(mask);
   } else {
     const image = document.createElement('img');
     image.src = style.iconPath;
@@ -772,6 +885,8 @@ class StyleIndex {
     const textColor = rule.textColor ? String(rule.textColor) : undefined;
     const backgroundColor = rule.backgroundColor ? String(rule.backgroundColor) : undefined;
     const fillBackground = rule.fillBackground !== false;
+    const iconColorMode = iconSource === 'svg' ? normalizeIconColorMode(rule) : ICON_COLOR_MODE_ORIGINAL;
+    const iconColor = iconColorMode === ICON_COLOR_MODE_CUSTOM && rule.iconColor ? String(rule.iconColor) : undefined;
     const cascade = Boolean(rule.cascade);
 
     if (!icon && !textColor && !backgroundColor && !cascade) return null;
@@ -789,6 +904,8 @@ class StyleIndex {
       iconSource,
       iconPath: iconInfo.resourcePath,
       iconVaultPath: iconInfo.vaultPath,
+      iconColorMode,
+      iconColor,
       textColor,
       backgroundColor,
       fillBackground,
@@ -837,6 +954,8 @@ class StyleIndex {
       iconSource: iconSource ? iconSource.iconSource : undefined,
       iconPath: iconSource ? iconSource.iconPath : undefined,
       iconVaultPath: iconSource ? iconSource.iconVaultPath : undefined,
+      iconColorMode: iconSource ? iconSource.iconColorMode : undefined,
+      iconColor: iconSource ? iconSource.iconColor : undefined,
       textColor: textColorSource ? textColorSource.textColor : undefined,
       backgroundColor: backgroundColorSource ? backgroundColorSource.backgroundColor : undefined,
       fillBackground: backgroundColorSource ? backgroundColorSource.fillBackground !== false : undefined,
@@ -905,6 +1024,8 @@ class StyleIndex {
       matchedRule: rulePaths.join(', ') || '',
       icon: style ? style.icon : '',
       resolvedIconPath: style ? style.iconVaultPath || '' : '',
+      iconColorMode: style ? normalizeIconColorMode(style) : '',
+      iconColor: style ? getEffectiveIconColor(style) || '' : '',
       textColor: style ? style.textColor || '' : '',
       backgroundColor: style ? style.backgroundColor || '' : '',
       fillBackground: style ? style.fillBackground !== false : '',
@@ -1866,6 +1987,8 @@ function renderDiagnosticsTable(containerEl, rows) {
     'matchedRule',
     'icon',
     'resolvedIconPath',
+    'iconColorMode',
+    'iconColor',
     'textColor',
     'backgroundColor',
     'fillBackground',
@@ -2574,6 +2697,8 @@ class RuleEditModal extends Modal {
         }
       });
 
+    addIconColorSettings(contentEl, this.rule, () => this.render());
+
     new Setting(contentEl)
       .setName('Цвет текста')
       .setDesc('Цвет применяется к названию файла/папки и внутренним ссылкам.')
@@ -2721,6 +2846,8 @@ class ExternalLinkRuleEditModal extends Modal {
           }));
         }
       });
+
+    addIconColorSettings(contentEl, this.rule, () => this.render());
 
     new Setting(contentEl)
       .setName('Цвет текста')
@@ -2928,6 +3055,8 @@ class PropertyValueRuleEditModal extends Modal {
           }));
         }
       });
+
+    addIconColorSettings(contentEl, this.rule, () => this.render());
 
     new Setting(contentEl)
       .setName('Цвет текста')
@@ -3253,6 +3382,8 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       labelFromPath(rule.path),
       normalizeIconSource(rule),
       rule.icon,
+      normalizeIconColorMode(rule),
+      rule.iconColor,
       rule.textColor,
       rule.backgroundColor,
       rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
@@ -3266,6 +3397,8 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       rule.prefix,
       normalizeIconSource(rule),
       rule.icon,
+      normalizeIconColorMode(rule),
+      rule.iconColor,
       rule.textColor,
       rule.backgroundColor,
       rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
@@ -3280,6 +3413,8 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       rule.value,
       normalizeIconSource(rule),
       rule.icon,
+      normalizeIconColorMode(rule),
+      rule.iconColor,
       rule.textColor,
       rule.backgroundColor,
       rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
