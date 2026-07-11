@@ -55,6 +55,17 @@
   gap: 0.55em;
 }
 
+.mic-color-hex-input {
+  width: 8.5em;
+  font-family: var(--font-monospace);
+  text-transform: uppercase;
+}
+
+.mic-color-hex-input-invalid {
+  border-color: var(--text-error) !important;
+  box-shadow: 0 0 0 1px var(--text-error) inset;
+}
+
 .mic-suggestion-popover.suggestion-container {
   position: fixed;
   z-index: 100000;

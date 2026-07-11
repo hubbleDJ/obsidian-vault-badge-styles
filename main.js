@@ -190,6 +190,23 @@ function hexToRgbChannels(color) {
   ].join(', ');
 }
 
+function normalizeHexColorInput(value) {
+  const normalized = String(value || '').trim();
+  const shortMatch = normalized.match(/^#?([0-9a-f]{3})$/i);
+  if (shortMatch) {
+    return `#${shortMatch[1]
+      .split('')
+      .map((char) => char + char)
+      .join('')
+      .toUpperCase()}`;
+  }
+
+  const fullMatch = normalized.match(/^#?([0-9a-f]{6})$/i);
+  if (fullMatch) return `#${fullMatch[1].toUpperCase()}`;
+
+  return null;
+}
+
 function applyBackgroundVariables(element, color) {
   if (!color) {
     element.style.removeProperty('--mic-background-color');
@@ -213,6 +230,64 @@ function applyStyleBackgroundVariables(element, style) {
   }
 
   applyBackgroundVariables(element, style.fillBackground === false ? 'transparent' : style.backgroundColor);
+}
+
+function addHexColorSetting(containerEl, options) {
+  const {
+    name,
+    desc,
+    rule,
+    property,
+    fallback = '#FFFFFF',
+    placeholder = '#FFFFFF',
+  } = options;
+  const fallbackColor = normalizeHexColorInput(rule[property]) || normalizeHexColorInput(fallback) || '#FFFFFF';
+  let colorPicker = null;
+  let hexInput = null;
+
+  return new Setting(containerEl)
+    .setName(name)
+    .setDesc(desc)
+    .addColorPicker((color) => {
+      colorPicker = color;
+      color
+        .setValue(fallbackColor)
+        .onChange((value) => {
+          const normalized = normalizeHexColorInput(value);
+          if (!normalized) return;
+
+          rule[property] = normalized;
+          if (hexInput) {
+            hexInput.inputEl.removeClass('mic-color-hex-input-invalid');
+            hexInput.setValue(normalized);
+          }
+        });
+    })
+    .addText((text) => {
+      hexInput = text;
+      text.inputEl.addClass('mic-color-hex-input');
+      text
+        .setPlaceholder(placeholder)
+        .setValue(normalizeHexColorInput(rule[property]) || fallbackColor)
+        .onChange((value) => {
+          if (!value.trim()) {
+            delete rule[property];
+            text.inputEl.removeClass('mic-color-hex-input-invalid');
+            return;
+          }
+
+          const normalized = normalizeHexColorInput(value);
+          if (!normalized) {
+            text.inputEl.addClass('mic-color-hex-input-invalid');
+            return;
+          }
+
+          rule[property] = normalized;
+          text.inputEl.removeClass('mic-color-hex-input-invalid');
+          if (colorPicker) colorPicker.setValue(normalized);
+          if (text.getValue() !== normalized) text.setValue(normalized);
+        });
+    });
 }
 
 function setRuleFillBackground(rule, value) {
@@ -275,16 +350,13 @@ function addIconColorSettings(containerEl, rule, rerender) {
     });
 
   if (mode === ICON_COLOR_MODE_CUSTOM) {
-    new Setting(containerEl)
-      .setName('Цвет SVG-иконки')
-      .setDesc('Одноцветная перекраска SVG через маску. Сложные многоцветные SVG лучше оставлять в оригинальном режиме.')
-      .addColorPicker((color) => {
-        color
-          .setValue(rule.iconColor || rule.textColor || '#FFFFFF')
-          .onChange((value) => {
-            rule.iconColor = value;
-          });
-      });
+    addHexColorSetting(containerEl, {
+      name: 'Цвет SVG-иконки',
+      desc: 'Одноцветная перекраска SVG через маску. Сложные многоцветные SVG лучше оставлять в оригинальном режиме.',
+      rule,
+      property: 'iconColor',
+      fallback: rule.textColor || '#FFFFFF',
+    });
   }
 }
 
@@ -2699,27 +2771,21 @@ class RuleEditModal extends Modal {
 
     addIconColorSettings(contentEl, this.rule, () => this.render());
 
-    new Setting(contentEl)
-      .setName('Цвет текста')
-      .setDesc('Цвет применяется к названию файла/папки и внутренним ссылкам.')
-      .addColorPicker((color) => {
-        color
-          .setValue(this.rule.textColor || '#FFFFFF')
-          .onChange((value) => {
-            this.rule.textColor = value;
-          });
-      });
+    addHexColorSetting(contentEl, {
+      name: 'Цвет текста',
+      desc: 'Цвет применяется к названию файла/папки и внутренним ссылкам.',
+      rule: this.rule,
+      property: 'textColor',
+      fallback: '#FFFFFF',
+    });
 
-    const backgroundSetting = new Setting(contentEl)
-      .setName('Цвет фона')
-      .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
-      .addColorPicker((color) => {
-        color
-          .setValue(this.rule.backgroundColor || this.rule.textColor || '#FFFFFF')
-          .onChange((value) => {
-            this.rule.backgroundColor = value;
-          });
-      });
+    const backgroundSetting = addHexColorSetting(contentEl, {
+      name: 'Цвет фона',
+      desc: 'Цвет фона плашки. Прозрачность задается общей настройкой плагина.',
+      rule: this.rule,
+      property: 'backgroundColor',
+      fallback: this.rule.textColor || '#FFFFFF',
+    });
     backgroundSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Заливать фон' });
     backgroundSetting.addToggle((toggle) => {
       toggle
@@ -2849,27 +2915,21 @@ class ExternalLinkRuleEditModal extends Modal {
 
     addIconColorSettings(contentEl, this.rule, () => this.render());
 
-    new Setting(contentEl)
-      .setName('Цвет текста')
-      .setDesc('Цвет применяется к внешним ссылкам с этим префиксом.')
-      .addColorPicker((color) => {
-        color
-          .setValue(this.rule.textColor || '#FFFFFF')
-          .onChange((value) => {
-            this.rule.textColor = value;
-          });
-      });
+    addHexColorSetting(contentEl, {
+      name: 'Цвет текста',
+      desc: 'Цвет применяется к внешним ссылкам с этим префиксом.',
+      rule: this.rule,
+      property: 'textColor',
+      fallback: '#FFFFFF',
+    });
 
-    const backgroundSetting = new Setting(contentEl)
-      .setName('Цвет фона')
-      .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
-      .addColorPicker((color) => {
-        color
-          .setValue(this.rule.backgroundColor || this.rule.textColor || '#BDE0FE')
-          .onChange((value) => {
-            this.rule.backgroundColor = value;
-          });
-      });
+    const backgroundSetting = addHexColorSetting(contentEl, {
+      name: 'Цвет фона',
+      desc: 'Цвет фона плашки. Прозрачность задается общей настройкой плагина.',
+      rule: this.rule,
+      property: 'backgroundColor',
+      fallback: this.rule.textColor || '#BDE0FE',
+    });
     backgroundSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Заливать фон' });
     backgroundSetting.addToggle((toggle) => {
       toggle
@@ -3058,27 +3118,21 @@ class PropertyValueRuleEditModal extends Modal {
 
     addIconColorSettings(contentEl, this.rule, () => this.render());
 
-    new Setting(contentEl)
-      .setName('Цвет текста')
-      .setDesc('Цвет применяется к совпавшему значению свойства.')
-      .addColorPicker((color) => {
-        color
-          .setValue(this.rule.textColor || '#FFFFFF')
-          .onChange((value) => {
-            this.rule.textColor = value;
-          });
-      });
+    addHexColorSetting(contentEl, {
+      name: 'Цвет текста',
+      desc: 'Цвет применяется к совпавшему значению свойства.',
+      rule: this.rule,
+      property: 'textColor',
+      fallback: '#FFFFFF',
+    });
 
-    const backgroundSetting = new Setting(contentEl)
-      .setName('Цвет фона')
-      .setDesc('Цвет фона плашки. Прозрачность задается общей настройкой плагина.')
-      .addColorPicker((color) => {
-        color
-          .setValue(this.rule.backgroundColor || this.rule.textColor || '#FFFFFF')
-          .onChange((value) => {
-            this.rule.backgroundColor = value;
-          });
-      });
+    const backgroundSetting = addHexColorSetting(contentEl, {
+      name: 'Цвет фона',
+      desc: 'Цвет фона плашки. Прозрачность задается общей настройкой плагина.',
+      rule: this.rule,
+      property: 'backgroundColor',
+      fallback: this.rule.textColor || '#FFFFFF',
+    });
     backgroundSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Заливать фон' });
     backgroundSetting.addToggle((toggle) => {
       toggle
