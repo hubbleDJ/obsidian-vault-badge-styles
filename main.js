@@ -1315,7 +1315,9 @@ class FileExplorerRenderer {
     if (this.observer) return;
 
     this.observer = new MutationObserver(() => {
-      if (this.settings.enableFileExplorer) this.scheduleRefresh();
+      if (!this.settings.enableFileExplorer) return;
+      if (this.hasActiveRename()) return;
+      this.scheduleRefresh();
     });
 
     this.observer.observe(document.body, { childList: true, subtree: true });
@@ -1336,6 +1338,8 @@ class FileExplorerRenderer {
       return;
     }
 
+    if (this.hasActiveRename()) return;
+
     document.querySelectorAll('.nav-file-title[data-path], .nav-folder-title[data-path]').forEach((titleEl) => {
       this.applyToFileExplorerTitle(titleEl);
     });
@@ -1345,10 +1349,32 @@ class FileExplorerRenderer {
     const path = titleEl.getAttribute('data-path');
     const contentEl = titleEl.querySelector('.nav-file-title-content, .nav-folder-title-content');
     if (!path || !contentEl) return;
+    if (this.isRenamingTitle(titleEl)) return;
 
     const style = this.styleIndex.getEffectiveStyleForPath(path);
     this.applyStyleVariables(contentEl, style);
     this.applyIcon(titleEl, contentEl, style);
+  }
+
+  hasActiveRename() {
+    const activeEl = document.activeElement;
+    if (!activeEl) return false;
+
+    const activeTitle = activeEl.closest?.('.nav-file-title[data-path], .nav-folder-title[data-path]');
+    if (activeTitle && this.isRenamingTitle(activeTitle)) return true;
+
+    return Boolean(document.querySelector('.nav-file-title.is-being-renamed, .nav-folder-title.is-being-renamed, .nav-file-title.mod-renaming, .nav-folder-title.mod-renaming'));
+  }
+
+  isRenamingTitle(titleEl) {
+    if (!titleEl) return false;
+    if (titleEl.matches('.is-being-renamed, .mod-renaming')) return true;
+    if (titleEl.querySelector('input, textarea, [contenteditable="true"]')) return true;
+
+    const activeEl = document.activeElement;
+    if (!activeEl || !titleEl.contains(activeEl)) return false;
+
+    return activeEl.matches?.('input, textarea, [contenteditable="true"]') || Boolean(activeEl.closest?.('input, textarea, [contenteditable="true"]'));
   }
 
   applyStyleVariables(contentEl, style) {
