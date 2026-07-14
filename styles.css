@@ -43,10 +43,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
+  min-width: var(--mic-icon-size, 1em);
   height: 100%;
   line-height: 1;
   font-size: var(--mic-icon-size, 1em);
+}
+
+.mic-text-icon::before {
+  content: attr(data-mic-text-icon);
 }
 
 .mic-icon-suggestion {

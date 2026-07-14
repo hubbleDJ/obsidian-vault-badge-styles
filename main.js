@@ -781,7 +781,7 @@ function createIconElement(style, className, size) {
     wrapper.classList.add('mic-icon-text-source');
     const textIcon = document.createElement('span');
     textIcon.classList.add('mic-text-icon');
-    textIcon.textContent = style.icon;
+    textIcon.setAttribute('data-mic-text-icon', style.icon);
     wrapper.appendChild(textIcon);
   } else if (getEffectiveIconColor(style)) {
     wrapper.classList.add('mic-icon-mask-source');
