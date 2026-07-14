@@ -294,6 +294,74 @@ function clonePlainRule(rule) {
   return JSON.parse(JSON.stringify(rule || {}));
 }
 
+function uniqueNormalizedValues(values, normalizeValue) {
+  const seen = new Set();
+  const normalizedValues = [];
+
+  for (const value of values || []) {
+    const normalized = normalizeValue(value);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    normalizedValues.push(normalized);
+  }
+
+  return normalizedValues;
+}
+
+function getEditablePathRulePaths(rule) {
+  const sourceRule = rule || {};
+  if (Array.isArray(sourceRule.paths) && sourceRule.paths.length) {
+    return sourceRule.paths.map((path) => normalizeVaultPath(path).trim());
+  }
+  return [normalizeVaultPath(sourceRule.path).trim()];
+}
+
+function getPathRulePaths(rule) {
+  const sourceRule = rule || {};
+  const values = [];
+  if (sourceRule.path !== undefined) values.push(sourceRule.path);
+  if (Array.isArray(sourceRule.paths)) values.push(...sourceRule.paths);
+  return uniqueNormalizedValues(values, (path) => normalizeVaultPath(path).trim());
+}
+
+function setEditablePathRulePaths(rule, paths) {
+  const normalizedPaths = (paths && paths.length ? paths : ['']).map((path) => normalizeVaultPath(path).trim());
+  rule.path = normalizedPaths[0] || '';
+  if (normalizedPaths.length > 1) {
+    rule.paths = normalizedPaths;
+  } else {
+    delete rule.paths;
+  }
+}
+
+function getEditableExternalRulePrefixes(rule) {
+  const sourceRule = rule || {};
+  if (Array.isArray(sourceRule.prefixes) && sourceRule.prefixes.length) {
+    return sourceRule.prefixes.map((prefix) => String(prefix || '').trim());
+  }
+  return [String(sourceRule.prefix || sourceRule.urlPrefix || '').trim()];
+}
+
+function getExternalRulePrefixes(rule) {
+  const sourceRule = rule || {};
+  const values = [];
+  if (sourceRule.prefix !== undefined || sourceRule.urlPrefix !== undefined) {
+    values.push(sourceRule.prefix || sourceRule.urlPrefix);
+  }
+  if (Array.isArray(sourceRule.prefixes)) values.push(...sourceRule.prefixes);
+  return uniqueNormalizedValues(values, (prefix) => String(prefix || '').trim());
+}
+
+function setEditableExternalRulePrefixes(rule, prefixes) {
+  const normalizedPrefixes = (prefixes && prefixes.length ? prefixes : ['']).map((prefix) => String(prefix || '').trim());
+  rule.prefix = normalizedPrefixes[0] || '';
+  if (normalizedPrefixes.length > 1) {
+    rule.prefixes = normalizedPrefixes;
+  } else {
+    delete rule.prefixes;
+  }
+}
+
 function setRuleFillBackground(rule, value) {
   if (value) {
     delete rule.fillBackground;
@@ -385,11 +453,15 @@ function renamePathRules(rules, oldPath, newPath, type, includeChildren) {
   let changed = 0;
   const nextRules = (Array.isArray(rules) ? rules : []).map((rule) => {
     const cleanedRule = cleanPathRule(rule, type);
-    const nextPath = renameVaultPath(cleanedRule.path, oldPath, newPath, includeChildren);
-    if (!nextPath) return cleanedRule;
+    const nextPaths = getPathRulePaths(cleanedRule).map((path) => {
+      const renamedPath = renameVaultPath(path, oldPath, newPath, includeChildren);
+      if (!renamedPath) return path;
 
-    changed += 1;
-    return cleanPathRule({ ...cleanedRule, path: nextPath }, type);
+      changed += 1;
+      return renamedPath;
+    });
+
+    return cleanPathRule({ ...cleanedRule, path: nextPaths[0] || '', paths: nextPaths }, type);
   });
 
   return { rules: nextRules, changed };
@@ -397,7 +469,8 @@ function renamePathRules(rules, oldPath, newPath, type, includeChildren) {
 
 function cleanPathRule(rule, forcedType) {
   const sourceRule = rule || {};
-  const normalizedPath = normalizeVaultPath(sourceRule.path).trim();
+  const paths = getPathRulePaths(sourceRule);
+  const normalizedPath = paths[0] || '';
   const type = forcedType || normalizeRuleType(sourceRule, normalizedPath);
   const iconSource = normalizeIconSource(sourceRule);
 
@@ -405,6 +478,7 @@ function cleanPathRule(rule, forcedType) {
     type,
     path: normalizedPath,
   };
+  if (paths.length > 1) nextRule.paths = paths;
 
   if (sourceRule.icon) {
     nextRule.iconSource = iconSource;
@@ -435,9 +509,11 @@ function cleanRule(rule) {
 
 function cleanExternalLinkRule(rule) {
   const sourceRule = rule || {};
-  const prefix = String(sourceRule.prefix || sourceRule.urlPrefix || '').trim();
+  const prefixes = getExternalRulePrefixes(sourceRule);
+  const prefix = prefixes[0] || '';
   const iconSource = normalizeIconSource(sourceRule);
   const nextRule = { prefix };
+  if (prefixes.length > 1) nextRule.prefixes = prefixes;
 
   if (sourceRule.icon) {
     nextRule.iconSource = iconSource;
@@ -485,12 +561,73 @@ function propertyValueRuleKey(propertyName, value) {
   return `${normalizePropertyNameKey(propertyName)}\u0000${normalizePropertyValueKey(value)}`;
 }
 
+function normalizePropertyValuePair(pair) {
+  const sourcePair = pair || {};
+  return {
+    property: normalizePropertyName(sourcePair.property || sourcePair.propertyName || sourcePair.key),
+    value: normalizePropertyValue(sourcePair.value),
+  };
+}
+
+function getEditablePropertyValuePairs(rule) {
+  const sourceRule = rule || {};
+  if (Array.isArray(sourceRule.pairs) && sourceRule.pairs.length) {
+    return sourceRule.pairs.map((pair) => normalizePropertyValuePair(pair));
+  }
+  return [normalizePropertyValuePair(sourceRule)];
+}
+
+function getPropertyValueRulePairs(rule) {
+  const sourceRule = rule || {};
+  const values = [];
+  if (sourceRule.property !== undefined || sourceRule.propertyName !== undefined || sourceRule.key !== undefined || sourceRule.value !== undefined) {
+    values.push(sourceRule);
+  }
+  if (Array.isArray(sourceRule.pairs)) values.push(...sourceRule.pairs);
+
+  const seen = new Set();
+  const pairs = [];
+  for (const value of values) {
+    const pair = normalizePropertyValuePair(value);
+    if (!pair.property || !pair.value) continue;
+    const key = propertyValueRuleKey(pair.property, pair.value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pairs.push(pair);
+  }
+
+  return pairs;
+}
+
+function setEditablePropertyValuePairs(rule, pairs) {
+  const normalizedPairs = (pairs && pairs.length ? pairs : [{}]).map((pair) => normalizePropertyValuePair(pair));
+  rule.property = normalizedPairs[0] ? normalizedPairs[0].property : '';
+  rule.value = normalizedPairs[0] ? normalizedPairs[0].value : '';
+  if (normalizedPairs.length > 1) {
+    rule.pairs = normalizedPairs;
+  } else {
+    delete rule.pairs;
+  }
+}
+
+function formatRuleMatchers(values) {
+  const normalizedValues = (values || []).filter(Boolean);
+  if (!normalizedValues.length) return '';
+  if (normalizedValues.length <= 3) return normalizedValues.join('; ');
+  return `${normalizedValues.slice(0, 3).join('; ')} +${normalizedValues.length - 3}`;
+}
+
 function cleanPropertyValueRule(rule) {
   const sourceRule = rule || {};
-  const property = normalizePropertyName(sourceRule.property || sourceRule.propertyName || sourceRule.key);
-  const value = normalizePropertyValue(sourceRule.value);
+  const pairs = getPropertyValueRulePairs(sourceRule);
+  const firstPair = pairs[0] || { property: '', value: '' };
   const iconSource = normalizeIconSource(sourceRule);
-  const nextRule = { property, value };
+  const nextRule = {
+    property: firstPair.property,
+    value: firstPair.value,
+  };
+
+  if (pairs.length > 1) nextRule.pairs = pairs;
 
   if (sourceRule.icon) {
     nextRule.iconSource = iconSource;
@@ -885,34 +1022,36 @@ class StyleIndex {
   async addPathRules(rules, forcedType) {
     for (const rawRule of rules) {
       const rule = cleanPathRule(rawRule, forcedType);
-      const normalizedPath = rule.path;
-      if (!normalizedPath) continue;
       const ruleType = rule.type;
-      const targetPath = normalizedPath;
+      const paths = getPathRulePaths(rule);
 
-      const style = await this.buildStyleFromRule(rule, targetPath);
-      if (!style) continue;
+      for (const targetPath of paths) {
+        if (!targetPath) continue;
 
-      if (ruleType === 'file') {
-        this.directByFilePath.set(targetPath, {
-          ...style,
-          targetPath,
-        });
-      } else {
-        this.directByFolderPath.set(targetPath, style);
+        const style = await this.buildStyleFromRule(rule, targetPath);
+        if (!style) continue;
 
-        const folderNotePath = pathToFolderNotePath(targetPath);
-        const folderNote = folderNotePath ? this.app.vault.getAbstractFileByPath(folderNotePath) : null;
-        if (folderNote instanceof TFile) {
-          this.directByFilePath.set(folderNote.path, {
+        if (ruleType === 'file') {
+          this.directByFilePath.set(targetPath, {
             ...style,
-            targetPath: folderNote.path,
+            targetPath,
           });
-        }
-      }
+        } else {
+          this.directByFolderPath.set(targetPath, style);
 
-      if (ruleType === 'folder' && style.cascade) {
-        this.cascadingFolderStyles.push(style);
+          const folderNotePath = pathToFolderNotePath(targetPath);
+          const folderNote = folderNotePath ? this.app.vault.getAbstractFileByPath(folderNotePath) : null;
+          if (folderNote instanceof TFile) {
+            this.directByFilePath.set(folderNote.path, {
+              ...style,
+              targetPath: folderNote.path,
+            });
+          }
+        }
+
+        if (ruleType === 'folder' && style.cascade) {
+          this.cascadingFolderStyles.push(style);
+        }
       }
     }
   }
@@ -920,38 +1059,42 @@ class StyleIndex {
   async addExternalLinkRules(rules) {
     for (const rawRule of rules) {
       const rule = cleanExternalLinkRule(rawRule);
-      if (!rule.prefix) continue;
+      for (const prefix of getExternalRulePrefixes(rule)) {
+        if (!prefix) continue;
 
-      const style = await this.buildStyleFromRule(rule, rule.prefix);
-      if (!style) continue;
+        const style = await this.buildStyleFromRule(rule, prefix);
+        if (!style) continue;
 
-      this.externalPrefixStyles.push({
-        ...style,
-        prefix: rule.prefix,
-        targetPath: rule.prefix,
-      });
+        this.externalPrefixStyles.push({
+          ...style,
+          prefix,
+          targetPath: prefix,
+        });
+      }
     }
   }
 
   async addPropertyValueRules(rules) {
     for (const rawRule of rules) {
       const rule = cleanPropertyValueRule(rawRule);
-      if (!rule.property || !rule.value) continue;
+      for (const pair of getPropertyValueRulePairs(rule)) {
+        if (!pair.property || !pair.value) continue;
 
-      const targetPath = `${rule.property}: ${rule.value}`;
-      const style = await this.buildStyleFromRule({ ...rule, type: 'property-value' }, targetPath);
-      if (!style) continue;
+        const targetPath = `${pair.property}: ${pair.value}`;
+        const style = await this.buildStyleFromRule({ ...rule, type: 'property-value' }, targetPath);
+        if (!style) continue;
 
-      const nextStyle = {
-        ...style,
-        property: rule.property,
-        value: rule.value,
-        targetPath,
-        rulePath: targetPath,
-        ruleType: 'property-value',
-      };
+        const nextStyle = {
+          ...style,
+          property: pair.property,
+          value: pair.value,
+          targetPath,
+          rulePath: targetPath,
+          ruleType: 'property-value',
+        };
 
-      this.propertyValueStyles.set(propertyValueRuleKey(rule.property, rule.value), nextStyle);
+        this.propertyValueStyles.set(propertyValueRuleKey(pair.property, pair.value), nextStyle);
+      }
     }
   }
 
@@ -2696,6 +2839,70 @@ class RuleEditModal extends Modal {
     this.activeSuggests = [];
   }
 
+  getPathValues() {
+    const values = getEditablePathRulePaths(this.rule);
+    return values.length ? values : [''];
+  }
+
+  setPathValue(index, value) {
+    const values = this.getPathValues();
+    values[index] = normalizeVaultPath(value).trim();
+    setEditablePathRulePaths(this.rule, values);
+  }
+
+  removePathValue(index) {
+    const values = this.getPathValues().filter((_, valueIndex) => valueIndex !== index);
+    setEditablePathRulePaths(this.rule, values.length ? values : ['']);
+    this.render();
+  }
+
+  addPathValue() {
+    const values = this.getPathValues();
+    values.push('');
+    setEditablePathRulePaths(this.rule, values);
+    this.render();
+  }
+
+  renderPathInputs(contentEl) {
+    const values = this.getPathValues();
+
+    values.forEach((path, index) => {
+      const setting = new Setting(contentEl)
+        .setName(index === 0 ? 'Пути' : `Путь ${index + 1}`)
+        .setDesc(index === 0
+          ? 'Можно указать несколько папок или файлов, которые будут использовать один стиль.'
+          : 'Дополнительный путь для этого же стиля.')
+        .addText((text) => {
+          text
+            .setPlaceholder(this.rule.type === 'folder' ? 'Development/Golang' : 'main.md')
+            .setValue(path || '')
+            .onChange((value) => {
+              this.setPathValue(index, value);
+            });
+          this.activeSuggests.push(new VaultPathSuggest(this.app, text.inputEl, () => normalizeRuleType(this.rule, this.rule.path), (selectedPath) => {
+            this.setPathValue(index, selectedPath);
+            text.setValue(selectedPath);
+          }));
+        });
+
+      if (values.length > 1) {
+        setting.addButton((button) => {
+          button
+            .setIcon('x')
+            .setTooltip('Удалить путь')
+            .onClick(() => this.removePathValue(index));
+        });
+      }
+    });
+
+    new Setting(contentEl)
+      .addButton((button) => {
+        button
+          .setButtonText('Добавить путь')
+          .onClick(() => this.addPathValue());
+      });
+  }
+
   render() {
     this.destroySuggests();
     const { contentEl } = this;
@@ -2723,20 +2930,7 @@ class RuleEditModal extends Modal {
         });
     }
 
-    new Setting(contentEl)
-      .setName('Путь')
-      .setDesc('Выбери существующую папку или файл из подсказки, либо введи путь вручную.')
-      .addText((text) => {
-        text
-          .setPlaceholder(this.rule.type === 'folder' ? 'Development/Golang' : 'main.md')
-          .setValue(this.rule.path || '')
-          .onChange((value) => {
-            this.rule.path = normalizeVaultPath(value).trim();
-          });
-        this.activeSuggests.push(new VaultPathSuggest(this.app, text.inputEl, () => normalizeRuleType(this.rule, this.rule.path), (path) => {
-          this.rule.path = path;
-        }));
-      });
+    this.renderPathInputs(contentEl);
 
     new Setting(contentEl)
       .setName('Источник иконки')
@@ -2863,6 +3057,66 @@ class ExternalLinkRuleEditModal extends Modal {
     this.activeSuggests = [];
   }
 
+  getPrefixValues() {
+    const values = getEditableExternalRulePrefixes(this.rule);
+    return values.length ? values : [''];
+  }
+
+  setPrefixValue(index, value) {
+    const values = this.getPrefixValues();
+    values[index] = String(value || '').trim();
+    setEditableExternalRulePrefixes(this.rule, values);
+  }
+
+  removePrefixValue(index) {
+    const values = this.getPrefixValues().filter((_, valueIndex) => valueIndex !== index);
+    setEditableExternalRulePrefixes(this.rule, values.length ? values : ['']);
+    this.render();
+  }
+
+  addPrefixValue() {
+    const values = this.getPrefixValues();
+    values.push('');
+    setEditableExternalRulePrefixes(this.rule, values);
+    this.render();
+  }
+
+  renderPrefixInputs(contentEl) {
+    const values = this.getPrefixValues();
+
+    values.forEach((prefix, index) => {
+      const setting = new Setting(contentEl)
+        .setName(index === 0 ? 'Префиксы ссылок' : `Префикс ${index + 1}`)
+        .setDesc(index === 0
+          ? 'Можно указать несколько URL-префиксов, которые будут использовать один стиль.'
+          : 'Дополнительный URL-префикс для этого же стиля.')
+        .addText((text) => {
+          text
+            .setPlaceholder('https://vk.com/')
+            .setValue(prefix || '')
+            .onChange((value) => {
+              this.setPrefixValue(index, value);
+            });
+        });
+
+      if (values.length > 1) {
+        setting.addButton((button) => {
+          button
+            .setIcon('x')
+            .setTooltip('Удалить префикс')
+            .onClick(() => this.removePrefixValue(index));
+        });
+      }
+    });
+
+    new Setting(contentEl)
+      .addButton((button) => {
+        button
+          .setButtonText('Добавить префикс')
+          .onClick(() => this.addPrefixValue());
+      });
+  }
+
   render() {
     this.destroySuggests();
     const { contentEl } = this;
@@ -2870,17 +3124,7 @@ class ExternalLinkRuleEditModal extends Modal {
     contentEl.addClass('mic-rule-modal');
     contentEl.createEl('h2', { text: 'Правило внешней ссылки' });
 
-    new Setting(contentEl)
-      .setName('Префикс ссылки')
-      .setDesc('Правило применяется, если href начинается с этой строки. Более длинный префикс сильнее короткого.')
-      .addText((text) => {
-        text
-          .setPlaceholder('https://vk.com/')
-          .setValue(this.rule.prefix || '')
-          .onChange((value) => {
-            this.rule.prefix = value.trim();
-          });
-      });
+    this.renderPrefixInputs(contentEl);
 
     new Setting(contentEl)
       .setName('Источник иконки')
@@ -2995,13 +3239,42 @@ class PropertyValueRuleEditModal extends Modal {
     this.activeSuggests = [];
   }
 
+  getPairValues() {
+    const pairs = getEditablePropertyValuePairs(this.rule);
+    return pairs.length ? pairs : [{ property: '', value: '' }];
+  }
+
+  setPairValue(index, patch) {
+    const pairs = this.getPairValues();
+    pairs[index] = {
+      ...(pairs[index] || { property: '', value: '' }),
+      ...patch,
+    };
+    setEditablePropertyValuePairs(this.rule, pairs);
+  }
+
+  removePairValue(index) {
+    const pairs = this.getPairValues().filter((_, pairIndex) => pairIndex !== index);
+    setEditablePropertyValuePairs(this.rule, pairs.length ? pairs : [{ property: '', value: '' }]);
+    this.render();
+  }
+
+  addPairValue() {
+    const pairs = this.getPairValues();
+    pairs.push({ property: '', value: '' });
+    setEditablePropertyValuePairs(this.rule, pairs);
+    this.render();
+  }
+
   getPropertyNameSuggestions(query) {
     const normalizedQuery = normalizePropertyNameKey(query);
     const names = new Set();
 
     for (const rule of this.plugin.settings.propertyValueRules || []) {
-      const property = normalizePropertyName(rule.property);
-      if (property) names.add(property);
+      for (const pair of getPropertyValueRulePairs(rule)) {
+        const property = normalizePropertyName(pair.property);
+        if (property) names.add(property);
+      }
     }
 
     for (const file of this.app.vault.getFiles()) {
@@ -3020,14 +3293,16 @@ class PropertyValueRuleEditModal extends Modal {
       .slice(0, 50);
   }
 
-  getPropertyValueSuggestions(query) {
-    const propertyKey = normalizePropertyNameKey(this.rule.property);
+  getPropertyValueSuggestions(query, propertyName) {
+    const propertyKey = normalizePropertyNameKey(propertyName);
     const normalizedQuery = normalizePropertyValueKey(query);
     const values = new Set();
 
     for (const rule of this.plugin.settings.propertyValueRules || []) {
-      if (propertyKey && normalizePropertyNameKey(rule.property) !== propertyKey) continue;
-      flattenPropertyValues(rule.value).forEach((value) => values.add(value));
+      for (const pair of getPropertyValueRulePairs(rule)) {
+        if (propertyKey && normalizePropertyNameKey(pair.property) !== propertyKey) continue;
+        flattenPropertyValues(pair.value).forEach((value) => values.add(value));
+      }
     }
 
     for (const file of this.app.vault.getFiles()) {
@@ -3048,6 +3323,58 @@ class PropertyValueRuleEditModal extends Modal {
       .slice(0, 50);
   }
 
+  renderPairInputs(contentEl) {
+    const pairs = this.getPairValues();
+
+    pairs.forEach((pair, index) => {
+      const setting = new Setting(contentEl)
+        .setName(index === 0 ? 'Пары свойство + значение' : `Пара ${index + 1}`)
+        .setDesc(index === 0
+          ? 'Можно указать несколько точных пар, которые будут использовать один стиль.'
+          : 'Дополнительная пара для этого же стиля.')
+        .addText((text) => {
+          text
+            .setPlaceholder('Task status')
+            .setValue(pair.property || '')
+            .onChange((value) => {
+              this.setPairValue(index, { property: normalizePropertyName(value) });
+            });
+          this.activeSuggests.push(new TextValueSuggest(text.inputEl, (query) => this.getPropertyNameSuggestions(query), (value) => {
+            this.setPairValue(index, { property: normalizePropertyName(value) });
+            text.setValue(value);
+          }, 'Property suggestions'));
+        })
+        .addText((text) => {
+          text
+            .setPlaceholder('done')
+            .setValue(pair.value || '')
+            .onChange((value) => {
+              this.setPairValue(index, { value: normalizePropertyValue(value) });
+            });
+          this.activeSuggests.push(new TextValueSuggest(text.inputEl, (query) => this.getPropertyValueSuggestions(query, this.getPairValues()[index]?.property), (value) => {
+            this.setPairValue(index, { value: normalizePropertyValue(value) });
+            text.setValue(value);
+          }, 'Property value suggestions'));
+        });
+
+      if (pairs.length > 1) {
+        setting.addButton((button) => {
+          button
+            .setIcon('x')
+            .setTooltip('Удалить пару')
+            .onClick(() => this.removePairValue(index));
+        });
+      }
+    });
+
+    new Setting(contentEl)
+      .addButton((button) => {
+        button
+          .setButtonText('Добавить пару')
+          .onClick(() => this.addPairValue());
+      });
+  }
+
   render() {
     this.destroySuggests();
     const { contentEl } = this;
@@ -3055,35 +3382,7 @@ class PropertyValueRuleEditModal extends Modal {
     contentEl.addClass('mic-rule-modal');
     contentEl.createEl('h2', { text: 'Правило значения свойства' });
 
-    new Setting(contentEl)
-      .setName('Свойство')
-      .setDesc('Обязательное поле. Выбери существующее свойство из подсказки или введи имя вручную.')
-      .addText((text) => {
-        text
-          .setPlaceholder('Status')
-          .setValue(this.rule.property || '')
-          .onChange((value) => {
-            this.rule.property = normalizePropertyName(value);
-          });
-        this.activeSuggests.push(new TextValueSuggest(text.inputEl, (query) => this.getPropertyNameSuggestions(query), (value) => {
-          this.rule.property = normalizePropertyName(value);
-        }, 'Property suggestions'));
-      });
-
-    new Setting(contentEl)
-      .setName('Значение')
-      .setDesc('Точное значение свойства. Можно выбрать из значений, найденных в заметках.')
-      .addText((text) => {
-        text
-          .setPlaceholder('done')
-          .setValue(this.rule.value || '')
-          .onChange((value) => {
-            this.rule.value = normalizePropertyValue(value);
-          });
-        this.activeSuggests.push(new TextValueSuggest(text.inputEl, (query) => this.getPropertyValueSuggestions(query), (value) => {
-          this.rule.value = normalizePropertyValue(value);
-        }, 'Property value suggestions'));
-      });
+    this.renderPairInputs(contentEl);
 
     new Setting(contentEl)
       .setName('Источник иконки')
@@ -3433,11 +3732,12 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
   }
 
   pathRuleMatchesSearch(rule, type) {
+    const paths = getPathRulePaths(rule);
     return this.ruleTextMatches([
       type,
       type === 'folder' ? 'каталог папка folder' : 'файл file',
-      rule.path,
-      labelFromPath(rule.path),
+      paths.join(' '),
+      paths.map((path) => labelFromPath(path)).join(' '),
       normalizeIconSource(rule),
       rule.icon,
       normalizeIconColorMode(rule),
@@ -3450,9 +3750,10 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
   }
 
   externalRuleMatchesSearch(rule) {
+    const prefixes = getExternalRulePrefixes(rule);
     return this.ruleTextMatches([
       'external внешняя ссылка prefix префикс',
-      rule.prefix,
+      prefixes.join(' '),
       normalizeIconSource(rule),
       rule.icon,
       normalizeIconColorMode(rule),
@@ -3464,11 +3765,12 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
   }
 
   propertyValueRuleMatchesSearch(rule) {
+    const pairs = getPropertyValueRulePairs(rule);
     return this.ruleTextMatches([
       'property значение свойство status статус',
-      `${rule.property}:${rule.value}`,
-      rule.property,
-      rule.value,
+      pairs.map((pair) => `${pair.property}:${pair.value}`).join(' '),
+      pairs.map((pair) => pair.property).join(' '),
+      pairs.map((pair) => pair.value).join(' '),
       normalizeIconSource(rule),
       rule.icon,
       normalizeIconColorMode(rule),
@@ -3483,12 +3785,17 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     const row = containerEl.createDiv({ cls: 'mic-rule-row' });
     const info = row.createDiv({ cls: 'mic-rule-info' });
     const title = info.createDiv({ cls: 'mic-rule-title' });
-    title.setText(`${index + 1}. ${type === 'folder' ? 'Каталог' : 'Файл'}: ${rule.path}`);
+    const paths = getPathRulePaths(rule);
+    const primaryPath = paths[0] || rule.path;
+    title.setText(`${index + 1}. ${type === 'folder' ? 'Каталог' : 'Файл'}: ${formatRuleMatchers(paths)}`);
 
     const previewLine = info.createDiv({ cls: 'mic-rule-preview-line' });
-    const previewStyle = this.plugin.styleIndex.getDirectStyleForPath(rule.path)
-      || this.plugin.styleIndex.getEffectiveStyleForPath(rule.path);
-    this.renderRulePreview(previewLine, labelFromPath(rule.path), previewStyle);
+    const previewStyle = this.plugin.styleIndex.getDirectStyleForPath(primaryPath)
+      || this.plugin.styleIndex.getEffectiveStyleForPath(primaryPath);
+    this.renderRulePreview(previewLine, labelFromPath(primaryPath), previewStyle);
+    if (paths.length > 1) {
+      previewLine.createSpan({ cls: 'mic-rule-badge', text: `+${paths.length - 1}` });
+    }
     if (type === 'folder' && rule.cascade) {
       previewLine.createSpan({ cls: 'mic-rule-badge', text: 'каскадно' });
     }
@@ -3523,12 +3830,17 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     const row = containerEl.createDiv({ cls: 'mic-rule-row' });
     const info = row.createDiv({ cls: 'mic-rule-info' });
     const title = info.createDiv({ cls: 'mic-rule-title' });
-    title.setText(`${index + 1}. Префикс: ${rule.prefix}`);
+    const prefixes = getExternalRulePrefixes(rule);
+    const primaryPrefix = prefixes[0] || rule.prefix;
+    title.setText(`${index + 1}. Префиксы: ${formatRuleMatchers(prefixes)}`);
 
     const previewLine = info.createDiv({ cls: 'mic-rule-preview-line' });
-    const previewStyle = this.plugin.styleIndex.getDirectStyleForExternalPrefix(rule.prefix)
-      || this.plugin.styleIndex.getEffectiveStyleForExternalUrl(rule.prefix);
-    this.renderRulePreview(previewLine, rule.prefix, previewStyle);
+    const previewStyle = this.plugin.styleIndex.getDirectStyleForExternalPrefix(primaryPrefix)
+      || this.plugin.styleIndex.getEffectiveStyleForExternalUrl(primaryPrefix);
+    this.renderRulePreview(previewLine, primaryPrefix, previewStyle);
+    if (prefixes.length > 1) {
+      previewLine.createSpan({ cls: 'mic-rule-badge', text: `+${prefixes.length - 1}` });
+    }
 
     const actions = row.createDiv({ cls: 'mic-rule-actions' });
 
@@ -3560,11 +3872,16 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
     const row = containerEl.createDiv({ cls: 'mic-rule-row' });
     const info = row.createDiv({ cls: 'mic-rule-info' });
     const title = info.createDiv({ cls: 'mic-rule-title' });
-    title.setText(`${index + 1}. Свойство: ${rule.property} = ${rule.value}`);
+    const pairs = getPropertyValueRulePairs(rule);
+    const primaryPair = pairs[0] || { property: rule.property, value: rule.value };
+    title.setText(`${index + 1}. Свойства: ${formatRuleMatchers(pairs.map((pair) => `${pair.property} = ${pair.value}`))}`);
 
     const previewLine = info.createDiv({ cls: 'mic-rule-preview-line' });
-    const previewStyle = this.plugin.styleIndex.getEffectiveStyleForPropertyValue(rule.property, rule.value);
-    this.renderRulePreview(previewLine, rule.value, previewStyle);
+    const previewStyle = this.plugin.styleIndex.getEffectiveStyleForPropertyValue(primaryPair.property, primaryPair.value);
+    this.renderRulePreview(previewLine, primaryPair.value, previewStyle);
+    if (pairs.length > 1) {
+      previewLine.createSpan({ cls: 'mic-rule-badge', text: `+${pairs.length - 1}` });
+    }
 
     const actions = row.createDiv({ cls: 'mic-rule-actions' });
 
@@ -4022,32 +4339,38 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
     let resolvedIconCount = 0;
 
     for (const rule of pathRules) {
-      const duplicateKey = `${rule.type}:${rule.path}`;
-      duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
+      for (const path of getPathRulePaths(rule)) {
+        const duplicateKey = `${rule.type}:${path}`;
+        duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
 
-      if (!this.rulePathExistsInVault(rule)) {
-        rulesWithoutMatches.push({ type: rule.type, path: rule.path });
+        if (!this.rulePathExistsInVault({ ...rule, path })) {
+          rulesWithoutMatches.push({ type: rule.type, path });
+        }
       }
 
-      const iconResult = await this.validateRuleIcon(rule, `${rule.type}:${rule.path}`);
+      const iconResult = await this.validateRuleIcon(rule, `${rule.type}:${formatRuleMatchers(getPathRulePaths(rule))}`);
       if (iconResult === 'resolved') resolvedIconCount += 1;
       if (iconResult && iconResult.status === 'missing') missingIcons.push(iconResult);
     }
 
     for (const rule of externalRules) {
-      const duplicateKey = `external:${rule.prefix}`;
-      duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
+      for (const prefix of getExternalRulePrefixes(rule)) {
+        const duplicateKey = `external:${prefix}`;
+        duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
+      }
 
-      const iconResult = await this.validateRuleIcon(rule, `external:${rule.prefix}`);
+      const iconResult = await this.validateRuleIcon(rule, `external:${formatRuleMatchers(getExternalRulePrefixes(rule))}`);
       if (iconResult === 'resolved') resolvedIconCount += 1;
       if (iconResult && iconResult.status === 'missing') missingIcons.push(iconResult);
     }
 
     for (const rule of propertyValueRules) {
-      const duplicateKey = `property-value:${propertyValueRuleKey(rule.property, rule.value)}`;
-      duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
+      for (const pair of getPropertyValueRulePairs(rule)) {
+        const duplicateKey = `property-value:${propertyValueRuleKey(pair.property, pair.value)}`;
+        duplicateRuleCounts.set(duplicateKey, (duplicateRuleCounts.get(duplicateKey) || 0) + 1);
+      }
 
-      const label = `property:${rule.property}=${rule.value}`;
+      const label = `property:${formatRuleMatchers(getPropertyValueRulePairs(rule).map((pair) => `${pair.property}=${pair.value}`))}`;
       const iconResult = await this.validateRuleIcon(rule, label);
       if (iconResult === 'resolved') resolvedIconCount += 1;
       if (iconResult && iconResult.status === 'missing') missingIcons.push(iconResult);
