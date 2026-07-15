@@ -34,6 +34,38 @@
   mask-size: contain;
 }
 
+.mic-icon-inline-svg-source {
+  color: var(--mic-icon-color, currentColor);
+}
+
+.mic-icon-inline-svg-source .mic-inline-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  color: inherit;
+  overflow: visible;
+}
+
+.mic-icon-inline-svg-source .mic-inline-svg :is(path, circle, rect, polygon, ellipse, use) {
+  fill: currentColor;
+}
+
+.mic-icon-inline-svg-source .mic-inline-svg :is(line, polyline) {
+  stroke: currentColor;
+}
+
+.mic-icon-inline-svg-source .mic-inline-svg [stroke]:not([stroke="none"]) {
+  stroke: currentColor;
+}
+
+.mic-icon-inline-svg-source .mic-inline-svg [fill="none"] {
+  fill: none !important;
+}
+
+.mic-icon-inline-svg-source .mic-inline-svg [stroke="none"] {
+  stroke: none !important;
+}
+
 .mic-icon.mic-icon-text-source {
   width: auto;
   min-width: var(--mic-icon-size, 1.15em);

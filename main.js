@@ -401,6 +401,58 @@ function getEffectiveIconColor(style) {
   return null;
 }
 
+function sanitizeInlineSvgText(svgText) {
+  if (!svgText || typeof DOMParser === 'undefined') return null;
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) return null;
+
+  const svg = doc.documentElement;
+  if (!svg || svg.tagName.toLowerCase() !== 'svg') return null;
+
+  svg.querySelectorAll('script, foreignObject, iframe, object, embed, link, meta, style, title, desc, metadata').forEach((element) => element.remove());
+  svg.querySelectorAll('*').forEach((element) => {
+    [...element.attributes].forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      const value = String(attribute.value || '').trim();
+
+      if (name.startsWith('on')) {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if (
+        (name === 'href' || name.endsWith(':href') || name === 'src')
+        && value
+        && (!value.startsWith('#') || /^javascript:/i.test(value))
+      ) {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+
+      if (name === 'style' && /(javascript:|expression\s*\(|url\s*\()/i.test(value)) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+
+  svg.classList.add('mic-inline-svg');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+
+  return svg.outerHTML;
+}
+
+function createInlineSvgNode(svgText) {
+  const template = document.createElement('template');
+  template.innerHTML = String(svgText || '').trim();
+  const svg = template.content.firstElementChild;
+  return svg instanceof SVGElement ? svg : null;
+}
+
 function addIconColorSettings(containerEl, rule, rerender) {
   if (!canRuleIconUseColor(rule)) return;
 
@@ -424,7 +476,7 @@ function addIconColorSettings(containerEl, rule, rerender) {
   if (mode === ICON_COLOR_MODE_CUSTOM) {
     addHexColorSetting(containerEl, {
       name: 'Цвет SVG-иконки',
-      desc: 'Одноцветная перекраска SVG через маску. Сложные многоцветные SVG лучше оставлять в оригинальном режиме.',
+      desc: 'SVG вставляется inline и красится через currentColor. Для анимации лучше использовать animate/animateTransform, без script и style внутри SVG.',
       rule,
       property: 'iconColor',
       fallback: rule.textColor || '#FFFFFF',
@@ -776,6 +828,7 @@ function createIconElement(style, className, size) {
   wrapper.classList.add(ICON_CLASS, className);
   wrapper.style.setProperty('--mic-icon-size', size);
   wrapper.setAttribute('aria-hidden', 'true');
+  const effectiveIconColor = getEffectiveIconColor(style);
 
   if (style.iconSource === 'text') {
     wrapper.classList.add('mic-icon-text-source');
@@ -783,9 +836,25 @@ function createIconElement(style, className, size) {
     textIcon.classList.add('mic-text-icon');
     textIcon.setAttribute('data-mic-text-icon', style.icon);
     wrapper.appendChild(textIcon);
-  } else if (getEffectiveIconColor(style)) {
+  } else if (style.inlineSvg && effectiveIconColor) {
+    const svg = createInlineSvgNode(style.inlineSvg);
+    if (svg) {
+      wrapper.classList.add('mic-icon-inline-svg-source');
+      wrapper.style.setProperty('--mic-icon-color', effectiveIconColor);
+      wrapper.appendChild(svg);
+    } else {
+      wrapper.classList.add('mic-icon-mask-source');
+      wrapper.style.setProperty('--mic-icon-color', effectiveIconColor);
+      const mask = document.createElement('span');
+      mask.classList.add('mic-icon-mask');
+      const iconUrl = String(style.iconPath || '').replace(/"/g, '\\"');
+      mask.style.setProperty('-webkit-mask-image', `url("${iconUrl}")`);
+      mask.style.setProperty('mask-image', `url("${iconUrl}")`);
+      wrapper.appendChild(mask);
+    }
+  } else if (effectiveIconColor) {
     wrapper.classList.add('mic-icon-mask-source');
-    wrapper.style.setProperty('--mic-icon-color', getEffectiveIconColor(style));
+    wrapper.style.setProperty('--mic-icon-color', effectiveIconColor);
     const mask = document.createElement('span');
     mask.classList.add('mic-icon-mask');
     const iconUrl = String(style.iconPath || '').replace(/"/g, '\\"');
@@ -882,12 +951,14 @@ class IconResolver {
     this.app = app;
     this.settings = settings;
     this.cache = new Map();
+    this.svgCache = new Map();
     this.warnedMissingIcons = new Set();
   }
 
   setSettings(settings) {
     this.settings = settings;
     this.cache.clear();
+    this.svgCache.clear();
     this.warnedMissingIcons.clear();
   }
 
@@ -973,6 +1044,23 @@ class IconResolver {
     } catch (error) {
       console.warn(`[${PLUGIN_ID}] Failed to check icon path: ${path}`, error);
       return false;
+    }
+  }
+
+  async resolveInlineSvg(vaultPath) {
+    const normalized = normalizeVaultPath(vaultPath);
+    if (!normalized || getIconFileExtension(normalized) !== 'svg') return null;
+    if (this.svgCache.has(normalized)) return this.svgCache.get(normalized);
+
+    try {
+      const svgText = await this.app.vault.adapter.read(normalized);
+      const sanitized = sanitizeInlineSvgText(svgText);
+      this.svgCache.set(normalized, sanitized);
+      return sanitized;
+    } catch (error) {
+      console.warn(`[${PLUGIN_ID}] Failed to read SVG icon: ${normalized}`, error);
+      this.svgCache.set(normalized, null);
+      return null;
     }
   }
 }
@@ -1113,6 +1201,12 @@ class StyleIndex {
     const iconInfo = icon && iconSource === 'svg'
       ? await this.iconResolver.resolveIconInfo(icon)
       : { vaultPath: null, resourcePath: null };
+    const shouldInlineSvg = iconInfo.vaultPath
+      && iconColorMode !== ICON_COLOR_MODE_ORIGINAL
+      && getIconFileExtension(iconInfo.vaultPath) === 'svg';
+    const inlineSvg = shouldInlineSvg
+      ? await this.iconResolver.resolveInlineSvg(iconInfo.vaultPath)
+      : null;
 
     return {
       targetPath,
@@ -1123,6 +1217,7 @@ class StyleIndex {
       iconSource,
       iconPath: iconInfo.resourcePath,
       iconVaultPath: iconInfo.vaultPath,
+      inlineSvg,
       iconColorMode,
       iconColor,
       textColor,
@@ -1173,6 +1268,7 @@ class StyleIndex {
       iconSource: iconSource ? iconSource.iconSource : undefined,
       iconPath: iconSource ? iconSource.iconPath : undefined,
       iconVaultPath: iconSource ? iconSource.iconVaultPath : undefined,
+      inlineSvg: iconSource ? iconSource.inlineSvg : undefined,
       iconColorMode: iconSource ? iconSource.iconColorMode : undefined,
       iconColor: iconSource ? iconSource.iconColor : undefined,
       textColor: textColorSource ? textColorSource.textColor : undefined,
