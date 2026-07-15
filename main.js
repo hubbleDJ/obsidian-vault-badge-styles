@@ -31,6 +31,7 @@ const TAG_STYLE_PROPERTY_VALUES_CLASS = 'mic-tag-style-property-values';
 const ICON_COLOR_MODE_ORIGINAL = 'original';
 const ICON_COLOR_MODE_TEXT = 'text';
 const ICON_COLOR_MODE_CUSTOM = 'custom';
+const BUNDLED_ICON_DIR = `.obsidian/plugins/${PLUGIN_ID}/icons`;
 const PROPERTY_VALUE_ATTR = 'data-mic-property-value';
 const PROPERTY_VALUE_WRAPPER_ATTR = 'data-mic-property-value-wrapper';
 const PROPERTY_VALUE_CONTENT_SELECTOR = [
@@ -84,6 +85,20 @@ const DEFAULT_SETTINGS = {
   tagBackgroundOpacity: 28,
 };
 
+const BUILTIN_ICON_FILES = {
+  'task-done.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>',
+  'task-in-progress.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".25"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur=".9s" repeatCount="indefinite"/></path></g></svg>',
+  'task-create.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.2" opacity=".28"/><path d="M12 8v8M8 12h8"/></g></svg>',
+  'task-cancel.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" d="m7 7 10 10M17 7 7 17"/></svg>',
+  'status-done.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>',
+  'status-in-progress.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".25"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur=".9s" repeatCount="indefinite"/></path></g></svg>',
+  'status-create.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.2" opacity=".28"/><path d="M12 8v8M8 12h8"/></g></svg>',
+  'status-cancel.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" d="m7 7 10 10M17 7 7 17"/></svg>',
+  'priority-important.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.5 22 19.5H2L12 2.5Zm0 5.3c-.8 0-1.35.55-1.3 1.35l.45 5.45h1.7l.45-5.45c.05-.8-.5-1.35-1.3-1.35Zm0 9.05a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z"/></svg>',
+  'priority-not-important.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M6 11h12a1.4 1.4 0 0 1 0 2.8H6A1.4 1.4 0 0 1 6 11Z"/></svg>',
+  'project.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" d="M3.5 6.5h6l2 2h9v9.8a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.5Z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m8 14 2.2 2.2L16 10.8"/></svg>',
+};
+
 function debounce(fn, delayMs) {
   let timeout = null;
   return (...args) => {
@@ -107,6 +122,14 @@ function basenameWithoutExtension(path) {
 
 function hasIconFileExtension(path) {
   return ICON_FILE_EXTENSION_RE.test(normalizeVaultPath(path));
+}
+
+function getEffectiveIconSearchPaths(settings) {
+  const configuredPaths = Array.isArray(settings.iconSearchPaths)
+    ? settings.iconSearchPaths
+    : DEFAULT_SETTINGS.iconSearchPaths;
+
+  return uniqueNormalizedValues([...configuredPaths, BUNDLED_ICON_DIR], (path) => normalizeVaultPath(path).trim());
 }
 
 function getIconFileExtension(path) {
@@ -1003,9 +1026,7 @@ class IconResolver {
     const normalized = normalizeVaultPath(iconValue);
     if (!normalized) return [];
 
-    const iconSearchPaths = Array.isArray(this.settings.iconSearchPaths)
-      ? this.settings.iconSearchPaths
-      : DEFAULT_SETTINGS.iconSearchPaths;
+    const iconSearchPaths = getEffectiveIconSearchPaths(this.settings);
 
     const hasExplicitExtension = hasIconFileExtension(normalized);
 
@@ -2640,8 +2661,15 @@ class IconNameSuggest {
 
   getSuggestions(query) {
     const normalizedQuery = String(query || '').toLowerCase();
-    const iconSearchPaths = new Set((this.plugin.settings.iconSearchPaths || []).map((path) => normalizeVaultPath(path)));
+    const iconSearchPaths = new Set(getEffectiveIconSearchPaths(this.plugin.settings));
     const iconNames = new Set();
+
+    for (const iconFilename of Object.keys(BUILTIN_ICON_FILES)) {
+      const iconName = basenameWithoutExtension(iconFilename);
+      if (!normalizedQuery || iconName.toLowerCase().includes(normalizedQuery)) {
+        iconNames.add(iconName);
+      }
+    }
 
     for (const file of this.app.vault.getFiles()) {
       const extension = getIconFileExtension(file.path);
@@ -4193,6 +4221,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
 module.exports = class VaultBadgeStylesPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
+    await this.ensureBundledIcons();
     this.handleTagClick = this.handleTagClick.bind(this);
     this.applyTagStyleClasses();
 
@@ -4321,6 +4350,35 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
       this.genericInternalLinkRenderer.start();
       this.refreshRenderers();
     });
+  }
+
+  async ensureBundledIcons() {
+    try {
+      await this.app.vault.adapter.mkdir(BUNDLED_ICON_DIR);
+    } catch (error) {
+      let iconDirExists = false;
+      try {
+        iconDirExists = await this.app.vault.adapter.exists(BUNDLED_ICON_DIR);
+      } catch (existsError) {
+        console.warn(`[${PLUGIN_ID}] Failed to check bundled icon directory`, existsError);
+      }
+
+      if (!iconDirExists) {
+        console.warn(`[${PLUGIN_ID}] Failed to create bundled icon directory`, error);
+        return;
+      }
+    }
+
+    for (const [filename, svgText] of Object.entries(BUILTIN_ICON_FILES)) {
+      const iconPath = `${BUNDLED_ICON_DIR}/${filename}`;
+      try {
+        if (!(await this.app.vault.adapter.exists(iconPath))) {
+          await this.app.vault.adapter.write(iconPath, svgText);
+        }
+      } catch (error) {
+        console.warn(`[${PLUGIN_ID}] Failed to write bundled icon: ${iconPath}`, error);
+      }
+    }
   }
 
   onunload() {

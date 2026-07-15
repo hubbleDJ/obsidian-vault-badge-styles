@@ -31,10 +31,11 @@
 - `styles.css` - базовые стили плашек, иконок, UI настроек и служебных классов.
 - `manifest.json` - manifest Obsidian plugin. `id`: `vault-badge-styles`.
 - `versions.json` - версии для BRAT/Obsidian.
+- `icons/` - исходники встроенных SVG-иконок плагина.
 - `README.md` - пользовательское описание на русском.
 - `PLUGIN_CONTEXT.md` - этот технический файл.
 
-В проекте нет сборки через `npm`/`esbuild`: публикуются напрямую `main.js`, `manifest.json`, `styles.css`.
+В проекте нет сборки через `npm`/`esbuild`: публикуются напрямую `main.js`, `manifest.json`, `styles.css`. Встроенные SVG дополнительно лежат в `icons/`, но для BRAT они также зашиты в `main.js` и создаются при загрузке плагина.
 
 ## Схема настроек
 
@@ -140,7 +141,7 @@
 - файл из vault;
 - emoji/любой короткий текст.
 
-Файловые иконки ищутся в папках `iconSearchPaths`.
+Файловые иконки ищутся в папках `iconSearchPaths`, затем во встроенной папке `.obsidian/plugins/vault-badge-styles/icons`.
 
 Поддерживаемые форматы:
 
@@ -153,6 +154,8 @@
 Если в настройке указано имя без расширения, сохраняется обратная совместимость: сначала ищется SVG по старой логике, например `golang.svg` или `golang/golang.svg` в папках поиска.
 
 Если указать расширение явно, например `golang.png`, `person.webp`, `icons/project.jpg`, resolver ищет именно этот файл.
+
+Встроенные иконки описаны в `BUILTIN_ICON_FILES` и материализуются методом `ensureBundledIcons()`. Пользовательские папки имеют приоритет выше встроенной папки, поэтому vault может переопределить любую встроенную иконку своим файлом с тем же именем.
 
 ### Цвет SVG-иконок
 
@@ -251,8 +254,9 @@
 Ищет и готовит иконки:
 
 - resolve по имени/пути;
-- поиск в `iconSearchPaths`;
+- поиск в `iconSearchPaths`, затем во встроенной папке `BUNDLED_ICON_DIR`;
 - проверка расширений;
+- materialize встроенных иконок через `ensureBundledIcons()`;
 - подготовка file/icon signature.
 
 ### `StyleIndex`
@@ -462,6 +466,8 @@ git diff --check
    - `main.js`;
    - `manifest.json`;
    - `styles.css`.
+
+Встроенные иконки входят в release через `main.js`; исходная папка `icons/` остается в git/tag для ручной установки и разработки.
 
 Пример:
 
