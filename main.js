@@ -32,6 +32,44 @@ const ICON_COLOR_MODE_ORIGINAL = 'original';
 const ICON_COLOR_MODE_TEXT = 'text';
 const ICON_COLOR_MODE_CUSTOM = 'custom';
 const BUNDLED_ICON_DIR = `.obsidian/plugins/${PLUGIN_ID}/icons`;
+const BUNDLED_ICON_PATH_PREFIX = 'bundled:';
+const ICON_MIME_TYPES = {
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  webp: 'image/webp',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+};
+const BUNDLED_ICON_DATA = {
+  "Development/c++.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSI+CiAgPGcgc3Ryb2tlPSIjMzE0NjREIiBzdHJva2Utd2lkdGg9IjMuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0zMiA4bDIyIDEydjI0TDMyIDU2IDEwIDQ0VjIweiIgZmlsbD0iI0E4REFEQyIvPgogICAgPHBhdGggZD0iTTQwIDI1Yy02LTctMTktMy0xOSA3czEzIDE0IDE5IDciIHN0cm9rZT0iIzFEMzU1NyIvPgogICAgPHBhdGggZD0iTTQ0IDI5djhNNDAgMzNoOCIgc3Ryb2tlPSIjRTc2RjUxIi8+CiAgPC9nPgo8L3N2Zz4K",
+  "Development/golang.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyODgiIGhlaWdodD0iMjg4IiB2aWV3Qm94PSIwIDAgMjg4IDI4OCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJHb3BoZXIgaWNvbiI+Cjx0aXRsZT5Hb3BoZXIgaWNvbjwvdGl0bGU+CjxwYXRoIGZpbGw9IiM3NmUwZmQiIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTSAyMSA0MyBMIDE4IDQ2IEwgMTUgNTMgTCAxNSA1OCBMIDE2IDU5IEwgMTcgNjQgTCAyMCA2NyBMIDIwIDY4IEwgMjQgNzEgTCAzMCA3NCBMIDMyIDc0IEwgMzUgNzYgTCAzNyA3NiBMIDQwIDc4IEwgNDAgODEgTCAzOSA4MiBMIDM5IDg1IEwgMzggODYgTCAzOCA5MCBMIDM3IDkxIEwgMzcgMTAwIEwgMzYgMTAxIEwgMzYgMjg3IEwgMjUxIDI4NyBMIDI1MSAxMDEgTCAyNTAgMTAwIEwgMjUwIDkxIEwgMjQ5IDkwIEwgMjQ5IDg2IEwgMjQ4IDg1IEwgMjQ4IDgyIEwgMjQ2IDc4IEwgMjQ4IDc2IEwgMjUyIDc1IEwgMjYwIDcxIEwgMjYyIDY5IEwgMjYzIDY5IEwgMjY4IDYyIEwgMjY4IDU5IEwgMjY5IDU4IEwgMjY5IDUzIEwgMjY2IDQ2IEwgMjYzIDQzIEwgMjU3IDQwIEwgMjQ4IDQwIEwgMjQwIDQ0IEwgMjMwIDUyIEwgMjI2IDQ4IEwgMjI1IDQ4IEwgMjIyIDQ1IEwgMjE5IDQ0IEwgMjE3IDQyIEwgMjA3IDM3IEwgMjA1IDM3IEwgMjA0IDM2IEwgMjAyIDM2IEwgMTk1IDMzIEwgMTkyIDMzIEwgMTkxIDMyIEwgMTg4IDMyIEwgMTg3IDMxIEwgMTgzIDMxIEwgMTgyIDMwIEwgMTc3IDMwIEwgMTc2IDI5IEwgMTY5IDI5IEwgMTY4IDI4IEwgMTU1IDI4IEwgMTU0IDI3IEwgMTMzIDI3IEwgMTMyIDI4IEwgMTE5IDI4IEwgMTE4IDI5IEwgMTExIDI5IEwgMTEwIDMwIEwgMTA1IDMwIEwgMTA0IDMxIEwgMTAwIDMxIEwgOTkgMzIgTCA5MiAzMyBMIDkxIDM0IEwgODMgMzYgTCA4MCAzOCBMIDc4IDM4IEwgNzAgNDIgTCA2OCA0NCBMIDYxIDQ4IEwgNTYgNTMgTCA1NSA1MyBMIDUxIDQ5IEwgNTAgNDkgTCA0MSA0MiBMIDM3IDQxIEwgMzYgNDAgTCAyNyA0MCBaIE0gMjQgNTQgTCAyNiA1MiBMIDMzIDUyIEwgMzQgNTMgTCAzNiA1MyBMIDQzIDU3IEwgNDcgNjEgTCA0NyA2MyBMIDQ2IDY0IEwgNDMgNjQgTCA0MCA2MSBMIDM2IDYxIEwgMzUgNjIgTCAzMiA2MiBMIDI3IDY3IEwgMjYgNjcgTCAyNSA2NiBMIDI1IDYyIEwgMjggNTkgTCAzMiA1NyBMIDI1IDU3IEwgMjQgNTYgWiBNIDI2MCA1MyBMIDI2MCA1NSBMIDI1OCA1NyBMIDI1NyA1NiBMIDI1NCA1NiBMIDI1NSA1NiBMIDI2MCA2MSBMIDI2MCA2MyBMIDI1OCA2NSBMIDI1NyA2NSBMIDI1NCA2MSBMIDI1MCA1OSBMIDI0NSA1OSBMIDI0MCA2MyBMIDIzOCA2MyBMIDIzNyA2MiBMIDIzNyA2MCBMIDI0MiA1NSBMIDI0OCA1MiBMIDI1MCA1MiBMIDI1MSA1MSBMIDI1NyA1MSBaIE0gNDggODggTCA0OSA4NyBMIDQ5IDgwIEwgNTAgNzkgTCA1MSA3NCBMIDUzIDcxIEwgNTMgNjkgTCA1NSA2NyBMIDU3IDYzIEwgNjYgNTQgTCA3NCA0OSBMIDc2IDQ5IEwgNzkgNDcgTCA4MiA0NyBMIDgzIDQ2IEwgODggNDYgTCA4OSA0NSBMIDEwMiA0NiBMIDEwMyA0NyBMIDEwNiA0NyBMIDEwOSA0OSBMIDExMSA0OSBMIDExOSA1NCBMIDEyOCA2MyBMIDEzMyA3MSBMIDEzMyA3MyBMIDEzNSA3NiBMIDEzNSA3OSBMIDEzNiA4MCBMIDEzNyA5MyBMIDEzNiA5NCBMIDEzNiA5OSBMIDEzNSAxMDAgTCAxMzUgMTAzIEwgMTMxIDExMSBMIDEzOCAxMDggTCAxNDggMTA4IEwgMTQ5IDEwOSBMIDE1MyAxMTAgTCAxNTEgMTA3IEwgMTUxIDEwNSBMIDE0OSAxMDIgTCAxNDkgOTkgTCAxNDggOTggTCAxNDggODEgTCAxNDkgODAgTCAxNTAgNzQgTCAxNTUgNjUgTCAxNjYgNTQgTCAxNzYgNDkgTCAxODIgNDggTCAxODMgNDcgTCAxOTcgNDcgTCAxOTggNDggTCAyMDEgNDggTCAyMDIgNDkgTCAyMDQgNDkgTCAyMTEgNTIgTCAyMjIgNjEgTCAyMjIgNjIgTCAyMjcgNjggTCAyMzAgNzQgTCAyMzAgNzYgTCAyMzIgODAgTCAyMzMgOTIgTCAyMzIgOTMgTCAyMzIgOTkgTCAyMjcgMTExIEwgMjI1IDExMyBMIDIyNSAxMTQgTCAyMTUgMTI0IEwgMjA0IDEzMCBMIDIwMSAxMzAgTCAyMDAgMTMxIEwgMTk3IDEzMSBMIDE5NiAxMzIgTCAxODQgMTMyIEwgMTgzIDEzMSBMIDE3NyAxMzAgTCAxODAgMTM1IEwgMTgwIDE0MCBMIDE3OSAxNDEgTCAxODAgMTQyIEwgMTgwIDE0OCBMIDE3NiAxNTMgTCAxNzIgMTU1IEwgMTcwIDE1NSBMIDE2OSAxNTYgTCAxNjEgMTU2IEwgMTYwIDE1NSBMIDE2MCAxNzIgTCAxNTcgMTc2IEwgMTU1IDE3NyBMIDEzMSAxNzcgTCAxMjkgMTc2IEwgMTI2IDE3MiBMIDEyNiAxNTQgTCAxMjUgMTU2IEwgMTE1IDE1NSBMIDEwOSAxNTIgTCAxMDYgMTQ4IEwgMTA2IDE0MiBMIDEwNyAxNDEgTCAxMDYgMTQwIEwgMTA2IDEzNSBMIDEwOSAxMzAgTCAxMDIgMTMzIEwgOTUgMTMzIEwgOTQgMTM0IEwgOTEgMTM0IEwgOTAgMTMzIEwgODMgMTMzIEwgNjkgMTI3IEwgNjYgMTI0IEwgNjUgMTI0IEwgNTUgMTEzIEwgNDkgOTkgTCA0OSA5MiBMIDQ4IDkxIFoiLz4KPHBhdGggZmlsbD0iIzM4NGU1NCIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNIDI1IDU1IEwgMjYgNTYgTCAzMCA1NSBMIDMxIDU2IEwgMzQgNTYgTCAzNSA1NyBMIDI5IDYwIEwgMjYgNjMgTCAyNiA2NSBMIDI4IDY1IEwgMjggNjQgTCAzMyA2MCBMIDM4IDYwIEwgMzkgNTkgTCA0NCA2MyBMIDQ1IDYzIEwgNDUgNjEgTCA0MiA1OCBMIDM1IDU0IEwgMjYgNTQgWiBNIDI1OCA1MyBMIDI0OSA1MyBMIDI0MyA1NiBMIDI0MCA1OSBMIDIzOSA1OSBMIDIzOCA2MSBMIDIzOSA2MiBMIDI0NCA1OCBMIDI0OCA1NyBMIDI1NSA2MCBMIDI1NiA2MiBMIDI1OCA2MyBMIDI1NyA1OSBMIDI1MiA1NiBMIDI1NCA1NCBMIDI1NSA1NSBMIDI1OCA1NSBaIE0gMjgxIDMxIEwgMjcyIDIzIEwgMjY1IDIwIEwgMjYyIDIwIEwgMjYxIDE5IEwgMjUwIDE5IEwgMjQ5IDIwIEwgMjQzIDIxIEwgMjM3IDI0IEwgMjMwIDMwIEwgMjI5IDMwIEwgMjE5IDIzIEwgMjExIDE5IEwgMjA5IDE5IEwgMjA2IDE3IEwgMjA0IDE3IEwgMTk3IDE0IEwgMTk0IDE0IEwgMTkzIDEzIEwgMTkwIDEzIEwgMTg5IDEyIEwgMTg1IDEyIEwgMTg0IDExIEwgMTc3IDExIEwgMTc2IDEwIEwgMTQ3IDEwIEwgMTQ2IDkgTCAxNDQgOSBMIDE0MyAxMCBMIDExMSAxMCBMIDExMCAxMSBMIDk3IDEyIEwgOTYgMTMgTCA4OSAxNCBMIDg4IDE1IEwgODMgMTYgTCA4MCAxOCBMIDc4IDE4IEwgNjggMjMgTCA1OCAzMCBMIDQ5IDIzIEwgNDUgMjEgTCA0MyAyMSBMIDQyIDIwIEwgMzggMjAgTCAzNyAxOSBMIDI3IDE5IEwgMjYgMjAgTCAyMCAyMSBMIDE0IDI0IEwgNiAzMiBMIDIgNDAgTCAyIDQ0IEwgMSA0NSBMIDEgNTMgTCAyIDU0IEwgMiA1OCBMIDcgNjggTCAxNSA3NiBMIDIyIDgwIEwgMjIgODMgTCAyMSA4NCBMIDIxIDg3IEwgMjAgODggTCAyMCA5MyBMIDE5IDk0IEwgMTkgMTA1IEwgMTggMTA2IEwgMTggMjg3IEwgMzUgMjg3IEwgMzUgOTQgTCAzNiA5MyBMIDM2IDg4IEwgMzcgODcgTCAzNyA4NCBMIDM4IDgzIEwgMzggODAgTCAzOSA3OSBMIDM4IDc4IEwgMzMgNzcgTCAyMyA3MiBMIDE2IDY1IEwgMTUgNjEgTCAxNCA2MCBMIDE0IDUxIEwgMTkgNDMgTCAyMCA0MyBMIDIzIDQwIEwgMjUgNDAgTCAyOSAzOCBMIDM0IDM4IEwgMzUgMzkgTCAzOCAzOSBMIDQyIDQxIEwgNTUgNTEgTCA1NiA1MSBMIDY5IDQxIEwgODEgMzUgTCA4MyAzNSBMIDg0IDM0IEwgODYgMzQgTCA5MyAzMSBMIDk2IDMxIEwgOTcgMzAgTCAxMDEgMzAgTCAxMDIgMjkgTCAxMDYgMjkgTCAxMDcgMjggTCAxMTMgMjggTCAxMTQgMjcgTCAxMjIgMjcgTCAxMjMgMjYgTCAxNjQgMjYgTCAxNjUgMjcgTCAxNzMgMjcgTCAxNzQgMjggTCAxODAgMjggTCAxODEgMjkgTCAxOTAgMzAgTCAxOTEgMzEgTCAxOTQgMzEgTCAxOTUgMzIgTCAyMDYgMzUgTCAyMTggNDEgTCAyMzAgNTAgTCAyNDQgNDAgTCAyNDYgNDAgTCAyNTAgMzggTCAyNTUgMzggTCAyNTYgMzkgTCAyNTkgMzkgTCAyNjQgNDIgTCAyNjkgNDggTCAyNjkgNTAgTCAyNzAgNTEgTCAyNzAgNjEgTCAyNjggNjUgTCAyNjEgNzIgTCAyNDggNzggTCAyNDkgODAgTCAyNDkgODMgTCAyNTAgODQgTCAyNTAgODcgTCAyNTEgODggTCAyNTEgOTMgTCAyNTIgOTQgTCAyNTIgMjg3IEwgMjY5IDI4NyBMIDI2OSAxMDYgTCAyNjggMTA1IEwgMjY4IDk0IEwgMjY3IDkzIEwgMjY3IDg4IEwgMjY2IDg3IEwgMjY1IDgxIEwgMjY3IDc5IEwgMjczIDc2IEwgMjgwIDY5IEwgMjg2IDU3IEwgMjg3IDQ2IEwgMjg2IDQ1IEwgMjg2IDQxIEwgMjg1IDQwIEwgMjg1IDM4IFoiLz4KPHBhdGggZmlsbD0iI2ZlZmVmZSIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNIDEyNyAxNTIgTCAxMjcgMTY0IEwgMTI4IDE2NSBMIDEyOCAxNjcgTCAxMzAgMTY5IEwgMTU2IDE2OSBMIDE1OSAxNjUgTCAxNTkgMTUyIEwgMTU4IDE1MSBMIDEzNCAxNTEgTCAxMzMgMTUyIEwgMTMwIDE1MiBMIDEyOCAxNTEgWiBNIDE4NyA0OCBMIDE4NiA0OSBMIDE4MSA0OSBMIDE4MCA1MCBMIDE3NyA1MCBMIDE3NCA1MiBMIDE3MCA1MyBMIDE2OCA1NSBMIDE2NCA1NyBMIDE1OCA2MyBMIDE1OCA2NCBMIDE1NCA2OSBMIDE1MiA3MyBMIDE1MSA3OCBMIDE1MCA3OSBMIDE1MCA4MiBMIDE0OSA4MyBMIDE0OSA5NSBMIDE1MCA5NiBMIDE1MCAxMDAgTCAxNTEgMTAxIEwgMTUxIDEwMyBMIDE1NCAxMTAgTCAxNTYgMTExIEwgMTYyIDExNyBMIDE2MyAxMjEgTCAxNzIgMTI1IEwgMTc1IDEyOCBMIDE3NyAxMjggTCAxODEgMTMwIEwgMTg5IDEzMCBMIDE5MSAxMzEgTCAxOTIgMTMwIEwgMTk5IDEzMCBMIDIwMCAxMjkgTCAyMDggMTI3IEwgMjEwIDEyNSBMIDIxNiAxMjIgTCAyMjIgMTE2IEwgMjIyIDExNSBMIDIyNSAxMTIgTCAyMzAgMTAxIEwgMjMwIDk3IEwgMjMxIDk2IEwgMjMxIDgyIEwgMjMwIDgxIEwgMjI5IDc1IEwgMjI1IDY3IEwgMjE2IDU3IEwgMjE1IDU3IEwgMjEwIDUzIEwgMjAzIDUwIEwgMTk1IDQ5IEwgMTk0IDQ4IFogTSAyMDMgNzEgTCAyMTIgNzEgTCAyMTMgNzIgTCAyMTUgNzIgTCAyMjMgNzkgTCAyMjYgODYgTCAyMjYgOTMgTCAyMjMgMTAwIEwgMjE4IDEwNSBMIDIxMSAxMDggTCAyMDQgMTA4IEwgMTk3IDEwNSBMIDE5MiAxMDAgTCAxODkgOTMgTCAxODkgODUgTCAxOTIgNzkgTCAxOTcgNzQgWiBNIDg1IDQ3IEwgODQgNDggTCA4MSA0OCBMIDgwIDQ5IEwgNzggNDkgTCA3MSA1MiBMIDY1IDU3IEwgNjQgNTcgTCA1NyA2NSBMIDU2IDY4IEwgNTMgNzIgTCA1MyA3NCBMIDUxIDc4IEwgNTEgODEgTCA1MCA4MiBMIDUwIDk2IEwgNTEgOTcgTCA1MSAxMDEgTCA1MiAxMDIgTCA1MiAxMDQgTCA1NyAxMTQgTCA2MiAxMTkgTCA2MiAxMjAgTCA2MyAxMjAgTCA2OCAxMjUgTCA4MSAxMzEgTCA4NSAxMzEgTCA4NiAxMzIgTCA5OSAxMzIgTCAxMDAgMTMxIEwgMTA0IDEzMSBMIDEwNSAxMzAgTCAxMDcgMTMwIEwgMTExIDEyOCBMIDExNCAxMjUgTCAxMjIgMTIxIEwgMTI0IDExOSBMIDEyNCAxMTcgTCAxMzAgMTExIEwgMTMyIDEwNyBMIDEzMyAxMDIgTCAxMzQgMTAxIEwgMTM0IDk4IEwgMTM1IDk3IEwgMTM1IDgyIEwgMTM0IDgxIEwgMTM0IDc4IEwgMTMzIDc3IEwgMTMzIDc1IEwgMTMwIDY4IEwgMTI4IDY2IEwgMTI2IDYyIEwgMTIwIDU2IEwgMTE5IDU2IEwgMTE0IDUyIEwgMTEwIDUwIEwgMTA1IDQ5IEwgMTA0IDQ4IEwgMTAxIDQ4IEwgMTAwIDQ3IFogTSAxMDcgNzEgTCAxMTUgNzEgTCAxMjIgNzQgTCAxMjggODEgTCAxMjkgODMgTCAxMjkgODYgTCAxMzAgODcgTCAxMzAgOTIgTCAxMjkgOTMgTCAxMjkgOTYgTCAxMjYgMTAxIEwgMTIwIDEwNiBMIDExNiAxMDcgTCAxMTUgMTA4IEwgMTA4IDEwOCBMIDEwMSAxMDUgTCA5NSA5OSBMIDk0IDk1IEwgOTMgOTQgTCA5MyA4NCBMIDk1IDgwIEwgMTAyIDczIEwgMTA2IDcyIFoiLz4KPHBhdGggZmlsbD0iIzFhMTYxNCIgZmlsbC1ydWxlPSJldmVub2RkIiBkPSJNIDEyNSAxMTkgTCAxMjUgMTIzIEwgMTI2IDEyNSBMIDEzMCAxMjkgTCAxMzQgMTMxIEwgMTM3IDEzMSBMIDEzOCAxMzIgTCAxNDggMTMyIEwgMTQ5IDEzMSBMIDE1MiAxMzEgTCAxNTYgMTI5IEwgMTYxIDEyMyBMIDE2MSAxMTkgTCAxNjAgMTE3IEwgMTU2IDExMyBMIDE0OSAxMTAgTCAxMzcgMTEwIEwgMTM2IDExMSBMIDEzNCAxMTEgTCAxMzAgMTEzIFogTSAyMDMgNzMgTCAyMDIgNzQgTCAxOTggNzUgTCAxOTMgODAgTCAxOTIgODQgTCAxOTEgODUgTCAxOTEgOTQgTCAxOTQgMTAwIEwgMjAwIDEwNSBMIDIwMiAxMDUgTCAyMDMgMTA2IEwgMjEyIDEwNiBMIDIxOCAxMDMgTCAyMjMgOTcgTCAyMjMgOTUgTCAyMjQgOTQgTCAyMjQgODUgTCAyMjMgODQgTCAyMjIgODAgTCAyMTcgNzUgTCAyMTMgNzQgTCAyMTIgNzMgWiBNIDEwNiA3MyBMIDEwMiA3NSBMIDk3IDgwIEwgOTUgODQgTCA5NSA4NyBMIDk0IDg4IEwgOTQgOTAgTCA5NSA5MSBMIDk1IDk1IEwgOTcgOTkgTCAxMDIgMTA0IEwgMTA2IDEwNSBMIDEwNyAxMDYgTCAxMTYgMTA2IEwgMTIzIDEwMiBMIDEyNiA5OCBMIDEyNyA5NCBMIDEyOCA5MyBMIDEyOCA4NiBMIDEyNSA3OSBMIDExOSA3NCBMIDExNyA3NCBMIDExNiA3MyBaIi8+CjxwYXRoIGZpbGw9IiNjMjhiNzMiIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTSAxMDggMTM0IEwgMTA4IDE0MSBMIDExMSAxNDQgTCAxMTUgMTQ1IEwgMTE2IDE0NiBMIDEyMSAxNDYgTCAxMjIgMTQ3IEwgMTY1IDE0NyBMIDE2NiAxNDYgTCAxNzAgMTQ2IEwgMTcxIDE0NSBMIDE3MyAxNDUgTCAxNzggMTQxIEwgMTc4IDEzNCBMIDE3NyAxMzIgTCAxNzEgMTI2IEwgMTYyIDEyMiBMIDE2MSAxMjYgTCAxNTcgMTMwIEwgMTUzIDEzMiBMIDE1MSAxMzIgTCAxNTAgMTMzIEwgMTQ2IDEzMyBMIDE0NSAxMzQgTCAxMzYgMTMzIEwgMTI5IDEzMCBMIDEyNSAxMjYgTCAxMjQgMTIyIEwgMTE1IDEyNiBMIDEwOSAxMzIgWiIvPgo8cGF0aCBmaWxsPSIjNTM5YmFlIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9Ik0gMTI3IDE2NyBMIDEyNyAxNzIgTCAxMjggMTc0IEwgMTMxIDE3NiBMIDE1NSAxNzYgTCAxNTcgMTc1IEwgMTU5IDE3MiBMIDE1OSAxNjcgTCAxNTkgMTY4IEwgMTU1IDE3MSBMIDEzMSAxNzEgTCAxMjkgMTcwIEwgMTI3IDE2OCBaIE0gMTc5IDE0MiBMIDE3NCAxNDYgTCAxNzIgMTQ2IEwgMTcxIDE0NyBMIDE2MCAxNDggTCAxNjAgMTU0IEwgMTYxIDE1NSBMIDE2OSAxNTUgTCAxNzYgMTUyIEwgMTc5IDE0OCBaIE0gMTA3IDE0MiBMIDEwNyAxNDggTCAxMDkgMTUwIEwgMTA5IDE1MSBMIDExNSAxNTQgTCAxMjUgMTU1IEwgMTI2IDE1MyBMIDEyNiAxNDggTCAxMTkgMTQ4IEwgMTE4IDE0NyBMIDExNSAxNDcgTCAxMTQgMTQ2IEwgMTEyIDE0NiBaIi8+CjxwYXRoIGZpbGw9IiNhOGE4YTciIGZpbGwtcnVsZT0iZXZlbm9kZCIgZD0iTSAxMjcgMTQ4IEwgMTI3IDE1MCBMIDE0MSAxNTAgTCAxNDIgMTQ5IEwgMTQ1IDE0OSBMIDE0NiAxNTAgTCAxNTkgMTUwIEwgMTU5IDE0OCBaIi8+Cjwvc3ZnPg==",
+  "Development/python.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgZmlsbD0ibm9uZSI+CiAgPGcgc3Ryb2tlPSIjMzE0NjREIiBzdHJva2Utd2lkdGg9IjMuNCIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0zMSA5aC05YTkgOSAwIDAgMC05IDl2MTJoMTl2NkgxN2E4IDggMCAwIDAtOCA4djJhOSA5IDAgMCAwIDkgOWg5YTkgOSAwIDAgMCA5LTlWMzRIMjN2LTZoMjRhOCA4IDAgMCAwIDgtOHYtMmE5IDkgMCAwIDAtOS05SDMxeiIgZmlsbD0iIzM3NzZBQiIvPgogICAgPHBhdGggZD0iTTMzIDU1aDlhOSA5IDAgMCAwIDktOVYzNEgzNnYxMmE5IDkgMCAwIDEtOSA5eiIgZmlsbD0iI0ZGRDQzQiIvPgogICAgPGNpcmNsZSBjeD0iMjQiIGN5PSIxOCIgcj0iMiIgZmlsbD0iI0Y3RkZGNyIvPgogICAgPGNpcmNsZSBjeD0iNDEiIGN5PSI0NiIgcj0iMiIgZmlsbD0iIzMxNDY0RCIvPgogIDwvZz4KPC9zdmc+Cg==",
+  "location.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8cGF0aCBmaWxsPSIjRkZGRkZGIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiIGQ9IgogICAgTTEyOCAyMAogICAgQzc5LjQgMjAgNDAgNTkuNCA0MCAxMDgKICAgIEM0MCAxNzAgMTEyLjIgMjI1LjEgMTIxLjQgMjMxLjgKICAgIEMxMjUuMyAyMzQuNyAxMzAuNyAyMzQuNyAxMzQuNiAyMzEuOAogICAgQzE0My44IDIyNS4xIDIxNiAxNzAgMjE2IDEwOAogICAgQzIxNiA1OS40IDE3Ni42IDIwIDEyOCAyMAogICAgWgogICAgTTEyOCAxNDMKICAgIEMxMDguNyAxNDMgOTMgMTI3LjMgOTMgMTA4CiAgICBDOTMgODguNyAxMDguNyA3MyAxMjggNzMKICAgIEMxNDcuMyA3MyAxNjMgODguNyAxNjMgMTA4CiAgICBDMTYzIDEyNy4zIDE0Ny4zIDE0MyAxMjggMTQzCiAgICBaIi8+Cjwvc3ZnPgo=",
+  "Socials/telegram.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8cGF0aCBmaWxsPSIjRkZGRkZGIiBkPSIKICAgIE0yMjkuNyAzNC42CiAgICAzMi40IDExMC43CiAgICBjLTEzLjUgNS4yLTEzLjQgMTIuNi0yLjUgMTYKICAgIGw1MC42IDE1LjgKICAgIDE5LjYgNjEuMwogICAgYzIuNCA2LjggMS4yIDkuNSA4LjIgOS41CiAgICBjNS40IDAgNy44LTIuNSAxMC44LTUuNAogICAgbDI4LjEtMjcuMwogICAgNTguNCA0My4xCiAgICBjMTAuOCA2IDE4LjYgMi45IDIxLjMtMTAKICAgIGwzNi41LTE3MgogICAgYzMuNy0xNS4yLTUuOC0yMi4xLTE3LjctMTcuMQogICAgWgogICAgTTkyLjQgMTM3LjgKICAgIGw5OC45LTYyLjQKICAgIGM0LjktMyA5LjUtMS40IDUuOCAxLjkKICAgIGwtODEuNiA3My43CiAgICBsLTMuMiAzNC44CiAgICBaIi8+Cjwvc3ZnPgo=",
+  "Socials/youtube.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8cGF0aCBmaWxsPSIjRkZGRkZGIiBkPSIKICAgIE0yNDQgNzkuMgogICAgYy0yLjgtMjAuNS0xOC41LTM2LjItMzktMzkKICAgIEMxODYuOCAzNy4zIDE1OS43IDM2IDEyOCAzNgogICAgUzY5LjIgMzcuMyA1MSA0MC4yCiAgICBjLTIwLjUgMi44LTM2LjIgMTguNS0zOSAzOQogICAgQzkuMiA5Ny40IDggMTEyLjMgOCAxMjgKICAgIHMxLjIgMzAuNiA0IDQ4LjgKICAgIGMyLjggMjAuNSAxOC41IDM2LjIgMzkgMzkKICAgIDE4LjIgMi45IDQ1LjMgNC4yIDc3IDQuMgogICAgczU4LjgtMS4zIDc3LTQuMgogICAgYzIwLjUtMi44IDM2LjItMTguNSAzOS0zOQogICAgMi44LTE4LjIgNC0zMy4xIDQtNDguOAogICAgcy0xLjItMzAuNi00LTQ4LjgKICAgIFoKICAgIE0xMDQgMTcxLjUKICAgIHYtODcKICAgIGw3NS41IDQzLjUKICAgIFoiLz4KPC9zdmc+Cg==",
+  "Status/cancel.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8cGF0aCBkPSJNNjIgNjIgTDE5NCAxOTQgTTE5NCA2MiBMNjIgMTk0IgogICAgICAgIGZpbGw9Im5vbmUiCiAgICAgICAgc3Ryb2tlPSIjRkZGRkZGIgogICAgICAgIHN0cm9rZS13aWR0aD0iMzAiCiAgICAgICAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogICAgICAgIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+Cg==",
+  "Status/create.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8Y2lyY2xlIGN4PSIxMjgiIGN5PSIxMjgiIHI9Ijc4IgogICAgICAgICAgZmlsbD0ibm9uZSIKICAgICAgICAgIHN0cm9rZT0iI0ZGRkZGRiIKICAgICAgICAgIHN0cm9rZS13aWR0aD0iMTgiLz4KPC9zdmc+Cg==",
+  "Status/done.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8cGF0aCBkPSJNNDQgMTMyIEwxMDIgMTkwIEwyMTIgNjYiCiAgICAgICAgZmlsbD0ibm9uZSIKICAgICAgICBzdHJva2U9IiNGRkZGRkYiCiAgICAgICAgc3Ryb2tlLXdpZHRoPSIzMCIKICAgICAgICBzdHJva2UtbGluZWNhcD0icm91bmQiCiAgICAgICAgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgo8L3N2Zz4K",
+  "Status/in-progress.svg": "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNTYgMjU2Ij4KICA8cmVjdCB4PSIxMTciIHk9IjI0IiB3aWR0aD0iMjIiIGhlaWdodD0iNTIiIHJ4PSIxIiBmaWxsPSIjRkZGRkZGIiBmaWxsLW9wYWNpdHk9IjAuMTIwIiB0cmFuc2Zvcm09InJvdGF0ZSgwLjAwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC4xNzkiIHRyYW5zZm9ybT0icm90YXRlKDIyLjUwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC4yMzciIHRyYW5zZm9ybT0icm90YXRlKDQ1LjAwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC4yOTYiIHRyYW5zZm9ybT0icm90YXRlKDY3LjUwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC4zNTUiIHRyYW5zZm9ybT0icm90YXRlKDkwLjAwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC40MTMiIHRyYW5zZm9ybT0icm90YXRlKDExMi41MDAgMTI4IDEyOCkiLz4KICA8cmVjdCB4PSIxMTciIHk9IjI0IiB3aWR0aD0iMjIiIGhlaWdodD0iNTIiIHJ4PSIxIiBmaWxsPSIjRkZGRkZGIiBmaWxsLW9wYWNpdHk9IjAuNDcyIiB0cmFuc2Zvcm09InJvdGF0ZSgxMzUuMDAwIDEyOCAxMjgpIi8+CiAgPHJlY3QgeD0iMTE3IiB5PSIyNCIgd2lkdGg9IjIyIiBoZWlnaHQ9IjUyIiByeD0iMSIgZmlsbD0iI0ZGRkZGRiIgZmlsbC1vcGFjaXR5PSIwLjUzMSIgdHJhbnNmb3JtPSJyb3RhdGUoMTU3LjUwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC41ODkiIHRyYW5zZm9ybT0icm90YXRlKDE4MC4wMDAgMTI4IDEyOCkiLz4KICA8cmVjdCB4PSIxMTciIHk9IjI0IiB3aWR0aD0iMjIiIGhlaWdodD0iNTIiIHJ4PSIxIiBmaWxsPSIjRkZGRkZGIiBmaWxsLW9wYWNpdHk9IjAuNjQ4IiB0cmFuc2Zvcm09InJvdGF0ZSgyMDIuNTAwIDEyOCAxMjgpIi8+CiAgPHJlY3QgeD0iMTE3IiB5PSIyNCIgd2lkdGg9IjIyIiBoZWlnaHQ9IjUyIiByeD0iMSIgZmlsbD0iI0ZGRkZGRiIgZmlsbC1vcGFjaXR5PSIwLjcwNyIgdHJhbnNmb3JtPSJyb3RhdGUoMjI1LjAwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC43NjUiIHRyYW5zZm9ybT0icm90YXRlKDI0Ny41MDAgMTI4IDEyOCkiLz4KICA8cmVjdCB4PSIxMTciIHk9IjI0IiB3aWR0aD0iMjIiIGhlaWdodD0iNTIiIHJ4PSIxIiBmaWxsPSIjRkZGRkZGIiBmaWxsLW9wYWNpdHk9IjAuODI0IiB0cmFuc2Zvcm09InJvdGF0ZSgyNzAuMDAwIDEyOCAxMjgpIi8+CiAgPHJlY3QgeD0iMTE3IiB5PSIyNCIgd2lkdGg9IjIyIiBoZWlnaHQ9IjUyIiByeD0iMSIgZmlsbD0iI0ZGRkZGRiIgZmlsbC1vcGFjaXR5PSIwLjg4MyIgdHJhbnNmb3JtPSJyb3RhdGUoMjkyLjUwMCAxMjggMTI4KSIvPgogIDxyZWN0IHg9IjExNyIgeT0iMjQiIHdpZHRoPSIyMiIgaGVpZ2h0PSI1MiIgcng9IjEiIGZpbGw9IiNGRkZGRkYiIGZpbGwtb3BhY2l0eT0iMC45NDEiIHRyYW5zZm9ybT0icm90YXRlKDMxNS4wMDAgMTI4IDEyOCkiLz4KICA8cmVjdCB4PSIxMTciIHk9IjI0IiB3aWR0aD0iMjIiIGhlaWdodD0iNTIiIHJ4PSIxIiBmaWxsPSIjRkZGRkZGIiBmaWxsLW9wYWNpdHk9IjEuMDAwIiB0cmFuc2Zvcm09InJvdGF0ZSgzMzcuNTAwIDEyOCAxMjgpIi8+Cjwvc3ZnPgo="
+};
+const BUNDLED_ICON_ALIASES = {
+  "task-done": "Status/done.svg",
+  "task-done.svg": "Status/done.svg",
+  "task-in-progress": "Status/in-progress.svg",
+  "task-in-progress.svg": "Status/in-progress.svg",
+  "task-create": "Status/create.svg",
+  "task-create.svg": "Status/create.svg",
+  "task-cancel": "Status/cancel.svg",
+  "task-cancel.svg": "Status/cancel.svg",
+  "status-done": "Status/done.svg",
+  "status-done.svg": "Status/done.svg",
+  "status-in-progress": "Status/in-progress.svg",
+  "status-in-progress.svg": "Status/in-progress.svg",
+  "status-create": "Status/create.svg",
+  "status-create.svg": "Status/create.svg",
+  "status-cancel": "Status/cancel.svg",
+  "status-cancel.svg": "Status/cancel.svg"
+};
 const PROPERTY_VALUE_ATTR = 'data-mic-property-value';
 const PROPERTY_VALUE_WRAPPER_ATTR = 'data-mic-property-value-wrapper';
 const PROPERTY_VALUE_CONTENT_SELECTOR = [
@@ -85,20 +123,6 @@ const DEFAULT_SETTINGS = {
   tagBackgroundOpacity: 28,
 };
 
-const BUILTIN_ICON_FILES = {
-  'task-done.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>',
-  'task-in-progress.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".25"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur=".9s" repeatCount="indefinite"/></path></g></svg>',
-  'task-create.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.2" opacity=".28"/><path d="M12 8v8M8 12h8"/></g></svg>',
-  'task-cancel.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" d="m7 7 10 10M17 7 7 17"/></svg>',
-  'status-done.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.5 9.5 17.5 19.5 6.5"/></svg>',
-  'status-in-progress.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="12" cy="12" r="8.5" opacity=".25"/><path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5"><animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur=".9s" repeatCount="indefinite"/></path></g></svg>',
-  'status-create.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="8.2" opacity=".28"/><path d="M12 8v8M8 12h8"/></g></svg>',
-  'status-cancel.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" d="m7 7 10 10M17 7 7 17"/></svg>',
-  'priority-important.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.5 22 19.5H2L12 2.5Zm0 5.3c-.8 0-1.35.55-1.3 1.35l.45 5.45h1.7l.45-5.45c.05-.8-.5-1.35-1.3-1.35Zm0 9.05a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z"/></svg>',
-  'priority-not-important.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="currentColor" d="M6 11h12a1.4 1.4 0 0 1 0 2.8H6A1.4 1.4 0 0 1 6 11Z"/></svg>',
-  'project.svg': '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" d="M3.5 6.5h6l2 2h9v9.8a1.2 1.2 0 0 1-1.2 1.2H4.7a1.2 1.2 0 0 1-1.2-1.2V6.5Z"/><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="m8 14 2.2 2.2L16 10.8"/></svg>',
-};
-
 function debounce(fn, delayMs) {
   let timeout = null;
   return (...args) => {
@@ -135,6 +159,47 @@ function getEffectiveIconSearchPaths(settings) {
 function getIconFileExtension(path) {
   const match = normalizeVaultPath(path).match(ICON_FILE_EXTENSION_RE);
   return match ? match[1].toLowerCase() : '';
+}
+
+function stripIconFileExtension(path) {
+  const normalized = normalizeVaultPath(path);
+  const extension = getIconFileExtension(normalized);
+  return extension ? normalized.slice(0, -(extension.length + 1)) : normalized;
+}
+
+function relativePathFromBase(path, basePath) {
+  const normalizedPath = normalizeVaultPath(path);
+  const normalizedBase = normalizeVaultPath(basePath).replace(/\/+$/, '');
+  if (!normalizedBase) return normalizedPath;
+  return normalizedPath.startsWith(`${normalizedBase}/`)
+    ? normalizedPath.slice(normalizedBase.length + 1)
+    : normalizedPath;
+}
+
+function isBundledIconPath(path) {
+  return normalizeVaultPath(path).startsWith(BUNDLED_ICON_PATH_PREFIX);
+}
+
+function getBundledIconKeyFromPath(path) {
+  return normalizeVaultPath(path).slice(BUNDLED_ICON_PATH_PREFIX.length);
+}
+
+function getBundledIconPath(path) {
+  return `${BUNDLED_ICON_PATH_PREFIX}${normalizeVaultPath(path)}`;
+}
+
+function getIconMimeType(path) {
+  return ICON_MIME_TYPES[getIconFileExtension(path)] || 'application/octet-stream';
+}
+
+function decodeBase64Utf8(value) {
+  try {
+    const binary = window.atob(value);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return new TextDecoder().decode(bytes);
+  } catch (error) {
+    return '';
+  }
 }
 
 function dirname(path) {
@@ -975,13 +1040,19 @@ class IconResolver {
     this.settings = settings;
     this.cache = new Map();
     this.svgCache = new Map();
+    this.iconIndexPromise = null;
     this.warnedMissingIcons = new Set();
   }
 
   setSettings(settings) {
     this.settings = settings;
+    this.clearCaches();
+  }
+
+  clearCaches() {
     this.cache.clear();
     this.svgCache.clear();
+    this.iconIndexPromise = null;
     this.warnedMissingIcons.clear();
   }
 
@@ -1017,7 +1088,7 @@ class IconResolver {
 
     return {
       vaultPath,
-      resourcePath: vaultPath ? this.app.vault.adapter.getResourcePath(vaultPath) : null,
+      resourcePath: vaultPath ? this.getIconResourcePath(vaultPath) : null,
       triedPaths: this.getIconCandidatePaths(normalized),
     };
   }
@@ -1031,7 +1102,13 @@ class IconResolver {
     const hasExplicitExtension = hasIconFileExtension(normalized);
 
     if (normalized.includes('/')) {
-      return [hasExplicitExtension ? normalized : `${normalized}.svg`];
+      const directCandidate = hasExplicitExtension ? normalized : `${normalized}.svg`;
+      const searchPathCandidates = iconSearchPaths.map((searchPath) => {
+        const base = normalizeVaultPath(searchPath);
+        return `${base}/${directCandidate}`;
+      });
+
+      return uniqueNormalizedValues([directCandidate, ...searchPathCandidates], (path) => normalizeVaultPath(path));
     }
 
     return iconSearchPaths.flatMap((searchPath) => {
@@ -1056,7 +1133,138 @@ class IconResolver {
       if (await this.exists(candidate)) return candidate;
     }
 
+    const iconIndex = await this.getIconFileIndex();
+    const indexedPath = iconIndex.pathByKey.get(normalizeVaultPath(iconValue));
+    if (indexedPath) return indexedPath;
+
     return null;
+  }
+
+  async getIconFileIndex() {
+    if (!this.iconIndexPromise) {
+      this.iconIndexPromise = this.buildIconFileIndex();
+    }
+
+    return this.iconIndexPromise;
+  }
+
+  async buildIconFileIndex() {
+    const pathByKey = new Map();
+    const suggestionNames = new Set();
+
+    const addKey = (key, path) => {
+      const normalizedKey = normalizeVaultPath(key).trim();
+      const normalizedPath = normalizeVaultPath(path).trim();
+      if (!normalizedKey || !normalizedPath || pathByKey.has(normalizedKey)) return;
+      pathByKey.set(normalizedKey, normalizedPath);
+    };
+
+    for (const basePath of getEffectiveIconSearchPaths(this.settings)) {
+      const iconFiles = await this.listIconFiles(basePath);
+      iconFiles.sort((a, b) => {
+        const relativeA = relativePathFromBase(a, basePath);
+        const relativeB = relativePathFromBase(b, basePath);
+        const depthA = relativeA.split('/').length;
+        const depthB = relativeB.split('/').length;
+        return depthA - depthB || relativeA.localeCompare(relativeB);
+      });
+
+      for (const iconPath of iconFiles) {
+        const extension = getIconFileExtension(iconPath);
+        if (!ICON_FILE_EXTENSIONS.includes(extension)) continue;
+
+        const relativePath = relativePathFromBase(iconPath, basePath);
+        const relativePathWithoutExtension = stripIconFileExtension(relativePath);
+        const fileName = relativePath.split('/').pop() || relativePath;
+        const fileNameWithoutExtension = basenameWithoutExtension(relativePath);
+        const preferredSuggestion = extension === 'svg' ? relativePathWithoutExtension : relativePath;
+
+        addKey(iconPath, iconPath);
+        addKey(relativePath, iconPath);
+        addKey(fileName, iconPath);
+        suggestionNames.add(preferredSuggestion);
+
+        if (extension === 'svg') {
+          addKey(relativePathWithoutExtension, iconPath);
+          addKey(fileNameWithoutExtension, iconPath);
+          suggestionNames.add(fileNameWithoutExtension);
+        }
+      }
+    }
+
+    this.addBundledIconsToIndex(pathByKey, suggestionNames, addKey);
+
+    return {
+      pathByKey,
+      suggestionNames: [...suggestionNames].sort((a, b) => a.localeCompare(b)),
+    };
+  }
+
+  addBundledIconsToIndex(pathByKey, suggestionNames, addKey) {
+    const addBundledKey = (key, relativePath) => {
+      const normalizedRelativePath = normalizeVaultPath(relativePath);
+      if (!BUNDLED_ICON_DATA[normalizedRelativePath]) return;
+      addKey(key, getBundledIconPath(normalizedRelativePath));
+    };
+
+    Object.keys(BUNDLED_ICON_DATA).sort((a, b) => a.localeCompare(b)).forEach((relativePath) => {
+      const extension = getIconFileExtension(relativePath);
+      if (!ICON_FILE_EXTENSIONS.includes(extension)) return;
+
+      const relativePathWithoutExtension = stripIconFileExtension(relativePath);
+      const fileName = relativePath.split('/').pop() || relativePath;
+      const fileNameWithoutExtension = basenameWithoutExtension(relativePath);
+      const preferredSuggestion = extension === 'svg' ? relativePathWithoutExtension : relativePath;
+
+      addBundledKey(`${BUNDLED_ICON_DIR}/${relativePath}`, relativePath);
+      addBundledKey(relativePath, relativePath);
+      addBundledKey(fileName, relativePath);
+      suggestionNames.add(preferredSuggestion);
+
+      if (extension === 'svg') {
+        addBundledKey(relativePathWithoutExtension, relativePath);
+        addBundledKey(fileNameWithoutExtension, relativePath);
+        suggestionNames.add(fileNameWithoutExtension);
+      }
+    });
+
+    Object.entries(BUNDLED_ICON_ALIASES).forEach(([alias, relativePath]) => {
+      addBundledKey(alias, relativePath);
+    });
+  }
+
+  async listIconFiles(basePath) {
+    const normalizedBasePath = normalizeVaultPath(basePath);
+    if (!normalizedBasePath) return [];
+
+    try {
+      const output = [];
+      await this.listIconFilesRecursive(normalizedBasePath, output);
+      return output;
+    } catch (error) {
+      return [];
+    }
+  }
+
+  async listIconFilesRecursive(folderPath, output) {
+    const listing = await this.app.vault.adapter.list(folderPath);
+    for (const filePath of listing.files || []) {
+      if (ICON_FILE_EXTENSIONS.includes(getIconFileExtension(filePath))) {
+        output.push(normalizeVaultPath(filePath));
+      }
+    }
+
+    for (const childFolderPath of listing.folders || []) {
+      await this.listIconFilesRecursive(childFolderPath, output);
+    }
+  }
+
+  async getIconSuggestions(query) {
+    const normalizedQuery = String(query || '').toLowerCase();
+    const iconIndex = await this.getIconFileIndex();
+    return iconIndex.suggestionNames
+      .filter((iconName) => !normalizedQuery || iconName.toLowerCase().includes(normalizedQuery))
+      .slice(0, 50);
   }
 
   async exists(path) {
@@ -1068,13 +1276,34 @@ class IconResolver {
     }
   }
 
+  getIconResourcePath(vaultPath) {
+    const normalized = normalizeVaultPath(vaultPath);
+    if (isBundledIconPath(normalized)) return this.getBundledIconDataUrl(normalized);
+    return this.app.vault.adapter.getResourcePath(normalized);
+  }
+
+  getBundledIconDataUrl(vaultPath) {
+    const key = getBundledIconKeyFromPath(vaultPath);
+    const data = BUNDLED_ICON_DATA[key];
+    if (!data) return null;
+    return `data:${getIconMimeType(key)};base64,${data}`;
+  }
+
+  decodeBundledIcon(vaultPath) {
+    const key = getBundledIconKeyFromPath(vaultPath);
+    const data = BUNDLED_ICON_DATA[key];
+    return data ? decodeBase64Utf8(data) : '';
+  }
+
   async resolveInlineSvg(vaultPath) {
     const normalized = normalizeVaultPath(vaultPath);
     if (!normalized || getIconFileExtension(normalized) !== 'svg') return null;
     if (this.svgCache.has(normalized)) return this.svgCache.get(normalized);
 
     try {
-      const svgText = await this.app.vault.adapter.read(normalized);
+      const svgText = isBundledIconPath(normalized)
+        ? this.decodeBundledIcon(normalized)
+        : await this.app.vault.adapter.read(normalized);
       const sanitized = sanitizeInlineSvgText(svgText);
       this.svgCache.set(normalized, sanitized);
       return sanitized;
@@ -2485,6 +2714,7 @@ class VaultPathSuggest {
       this.close();
     };
     this.onWindowResize = () => this.close();
+    this.renderRequestId = 0;
 
     this.inputEl.setAttribute('aria-autocomplete', 'list');
     this.inputEl.setAttribute('aria-expanded', 'false');
@@ -2631,6 +2861,8 @@ class IconNameSuggest {
     this.highlightedIndex = 0;
     this.suggestions = [];
     this.isOpen = false;
+    this.isDestroyed = false;
+    this.renderRequestId = 0;
     this.suggestionEl = document.createElement('div');
     this.suggestionEl.classList.add('suggestion-container', 'mic-suggestion-popover');
     this.suggestionListEl = this.suggestionEl.createDiv({ cls: 'suggestion' });
@@ -2659,37 +2891,23 @@ class IconNameSuggest {
     window.addEventListener('resize', this.onWindowResize);
   }
 
-  getSuggestions(query) {
-    const normalizedQuery = String(query || '').toLowerCase();
-    const iconSearchPaths = new Set(getEffectiveIconSearchPaths(this.plugin.settings));
-    const iconNames = new Set();
-
-    for (const iconFilename of Object.keys(BUILTIN_ICON_FILES)) {
-      const iconName = basenameWithoutExtension(iconFilename);
-      if (!normalizedQuery || iconName.toLowerCase().includes(normalizedQuery)) {
-        iconNames.add(iconName);
-      }
-    }
-
-    for (const file of this.app.vault.getFiles()) {
-      const extension = getIconFileExtension(file.path);
-      if (!ICON_FILE_EXTENSIONS.includes(extension)) continue;
-      const parentPath = dirname(file.path);
-      const parentName = folderName(parentPath);
-      const parentParentPath = dirname(parentPath);
-      const fileBaseName = basenameWithoutExtension(file.path);
-      if (!iconSearchPaths.has(parentPath) && !(iconSearchPaths.has(parentParentPath) && parentName === fileBaseName)) continue;
-      const iconName = file.name;
-      if (!normalizedQuery || iconName.toLowerCase().includes(normalizedQuery)) {
-        iconNames.add(iconName);
-      }
-    }
-
-    return [...iconNames].sort((a, b) => a.localeCompare(b)).slice(0, 50);
+  async getSuggestions(query) {
+    return this.plugin.iconResolver.getIconSuggestions(query);
   }
 
-  render() {
-    this.suggestions = this.getSuggestions(this.inputEl.value);
+  async render() {
+    const requestId = ++this.renderRequestId;
+    const suggestions = await this.getSuggestions(this.inputEl.value);
+    if (
+      requestId !== this.renderRequestId ||
+      this.isDestroyed ||
+      !this.inputEl.isConnected ||
+      this.inputEl.ownerDocument.activeElement !== this.inputEl
+    ) {
+      return;
+    }
+
+    this.suggestions = suggestions;
     this.highlightedIndex = Math.min(this.highlightedIndex, Math.max(0, this.suggestions.length - 1));
 
     this.suggestionListEl.empty();
@@ -2803,6 +3021,8 @@ class IconNameSuggest {
   }
 
   destroy() {
+    this.isDestroyed = true;
+    this.renderRequestId += 1;
     this.inputEl.removeEventListener('input', this.onInput);
     this.inputEl.removeEventListener('focus', this.onFocus);
     this.inputEl.removeEventListener('keydown', this.onKeydown);
@@ -4221,7 +4441,6 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
 module.exports = class VaultBadgeStylesPlugin extends Plugin {
   async onload() {
     await this.loadSettings();
-    await this.ensureBundledIcons();
     this.handleTagClick = this.handleTagClick.bind(this);
     this.applyTagStyleClasses();
 
@@ -4352,35 +4571,6 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
     });
   }
 
-  async ensureBundledIcons() {
-    try {
-      await this.app.vault.adapter.mkdir(BUNDLED_ICON_DIR);
-    } catch (error) {
-      let iconDirExists = false;
-      try {
-        iconDirExists = await this.app.vault.adapter.exists(BUNDLED_ICON_DIR);
-      } catch (existsError) {
-        console.warn(`[${PLUGIN_ID}] Failed to check bundled icon directory`, existsError);
-      }
-
-      if (!iconDirExists) {
-        console.warn(`[${PLUGIN_ID}] Failed to create bundled icon directory`, error);
-        return;
-      }
-    }
-
-    for (const [filename, svgText] of Object.entries(BUILTIN_ICON_FILES)) {
-      const iconPath = `${BUNDLED_ICON_DIR}/${filename}`;
-      try {
-        if (!(await this.app.vault.adapter.exists(iconPath))) {
-          await this.app.vault.adapter.write(iconPath, svgText);
-        }
-      } catch (error) {
-        console.warn(`[${PLUGIN_ID}] Failed to write bundled icon: ${iconPath}`, error);
-      }
-    }
-  }
-
   onunload() {
     if (this.genericInternalLinkRenderer) this.genericInternalLinkRenderer.stop();
     if (this.tabHeaderRenderer) this.tabHeaderRenderer.stop();
@@ -4443,6 +4633,7 @@ module.exports = class VaultBadgeStylesPlugin extends Plugin {
 
   async rebuildAndRefresh() {
     try {
+      this.iconResolver.clearCaches();
       await this.styleIndex.rebuild();
       this.refreshRenderers();
     } catch (error) {
