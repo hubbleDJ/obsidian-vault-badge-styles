@@ -2003,6 +2003,7 @@ class MarkdownLinkRenderer {
       targetEl.setAttribute('data-mic-property-raw-value', value);
     } else {
       this.clearPropertyValue(valueEl);
+      return;
     }
 
     this.applyStyleVariables(targetEl, style);
@@ -2010,9 +2011,16 @@ class MarkdownLinkRenderer {
   }
 
   clearPropertyDecoration(valueEl) {
+    const hasPropertyDecoration =
+      valueEl.getAttribute(PROPERTY_VALUE_ATTR) === 'true' ||
+      valueEl.hasAttribute('data-mic-property-name') ||
+      valueEl.hasAttribute('data-mic-property-raw-value');
+
     valueEl.removeAttribute(PROPERTY_VALUE_ATTR);
     valueEl.removeAttribute('data-mic-property-name');
     valueEl.removeAttribute('data-mic-property-raw-value');
+    if (!hasPropertyDecoration) return;
+
     valueEl.classList.remove(COLORED_TEXT_CLASS);
     valueEl.style.removeProperty('--mic-text-color');
     applyBackgroundVariables(valueEl, null);
