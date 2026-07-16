@@ -1574,18 +1574,24 @@ class StyleIndex {
   }
 
   resolvePropertySource(path, direct, propertyName) {
-    if (direct && direct[propertyName]) {
+    if (direct && this.styleHasResolvableProperty(direct, propertyName)) {
       return { ...direct, inherited: false };
     }
 
     for (const folderStyle of this.cascadingFolderStyles) {
-      if (!folderStyle[propertyName]) continue;
+      if (!this.styleHasResolvableProperty(folderStyle, propertyName)) continue;
       if (this.isInsideFolder(path, folderStyle.targetPath)) {
         return { ...folderStyle, inherited: true };
       }
     }
 
     return null;
+  }
+
+  styleHasResolvableProperty(style, propertyName) {
+    if (!style || !style[propertyName]) return false;
+    if (propertyName === 'backgroundColor' && style.fillBackground === false) return false;
+    return true;
   }
 
   isInsideFolder(path, folderPath) {

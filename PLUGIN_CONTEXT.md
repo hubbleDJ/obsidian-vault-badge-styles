@@ -84,7 +84,7 @@
 - `textColor` - цвет текста;
 - `applyTextColor` - применять ли `textColor`; если `false`, цвет остается в настройках, но runtime наследует цвет выше;
 - `backgroundColor` - цвет фона плашки;
-- `fillBackground` - заливать ли фон плашки;
+- `fillBackground` - применять ли `backgroundColor`; если `false`, фон правила не блокирует наследование от cascade-родителя;
 - `iconColorMode` - режим цвета SVG-иконки;
 - `iconColor` - кастомный цвет SVG-иконки.
 
@@ -175,7 +175,7 @@
 - `textColor` - текст;
 - `applyTextColor` - выключает применение `textColor`, не удаляя выбранный цвет из правила;
 - `backgroundColor` - фон;
-- `fillBackground` - включить или выключить заливку;
+- `fillBackground` - выключает применение `backgroundColor`, не удаляя выбранный цвет из правила; при cascade может наследоваться фон выше;
 - `tagBackgroundOpacity` - общая прозрачность фона всех плашек.
 
 Цвета поддерживают HEX-ввод:
