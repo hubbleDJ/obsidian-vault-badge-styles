@@ -82,6 +82,7 @@
 - `iconSource` - источник иконки: файл или emoji/текст;
 - `icon` - имя/путь иконки или emoji/текст;
 - `textColor` - цвет текста;
+- `applyTextColor` - применять ли `textColor`; если `false`, цвет остается в настройках, но runtime наследует цвет выше;
 - `backgroundColor` - цвет фона плашки;
 - `fillBackground` - заливать ли фон плашки;
 - `iconColorMode` - режим цвета SVG-иконки;
@@ -172,6 +173,7 @@
 Плашки переиспользуют форму тегов Obsidian, но цвета задаются правилами плагина:
 
 - `textColor` - текст;
+- `applyTextColor` - выключает применение `textColor`, не удаляя выбранный цвет из правила;
 - `backgroundColor` - фон;
 - `fillBackground` - включить или выключить заливку;
 - `tagBackgroundOpacity` - общая прозрачность фона всех плашек.

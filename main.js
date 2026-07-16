@@ -458,6 +458,18 @@ function setRuleFillBackground(rule, value) {
   }
 }
 
+function shouldRuleApplyTextColor(rule) {
+  return !rule || rule.applyTextColor !== false;
+}
+
+function setRuleApplyTextColor(rule, value) {
+  if (value) {
+    delete rule.applyTextColor;
+  } else {
+    rule.applyTextColor = false;
+  }
+}
+
 function setRuleIconColorMode(rule, value) {
   const mode = normalizeIconColorMode({ iconColorMode: value });
   if (mode === ICON_COLOR_MODE_ORIGINAL) {
@@ -572,6 +584,24 @@ function addIconColorSettings(containerEl, rule, rerender) {
   }
 }
 
+function addTextColorSettings(containerEl, rule, desc, fallback) {
+  const textColorSetting = addHexColorSetting(containerEl, {
+    name: 'Цвет текста',
+    desc,
+    rule,
+    property: 'textColor',
+    fallback,
+  });
+  textColorSetting.controlEl.createSpan({ cls: 'mic-setting-inline-label', text: 'Красить текст' });
+  textColorSetting.addToggle((toggle) => {
+    toggle
+      .setValue(shouldRuleApplyTextColor(rule))
+      .onChange((value) => {
+        setRuleApplyTextColor(rule, value);
+      });
+  });
+}
+
 function renameVaultPath(path, oldPath, newPath, includeChildren) {
   const normalizedPath = normalizeVaultPath(path).trim();
   const normalizedOldPath = normalizeVaultPath(oldPath).trim();
@@ -625,6 +655,7 @@ function cleanPathRule(rule, forcedType) {
     nextRule.icon = String(sourceRule.icon).trim();
   }
   if (sourceRule.textColor) nextRule.textColor = String(sourceRule.textColor).trim();
+  if (sourceRule.applyTextColor === false) nextRule.applyTextColor = false;
   if (sourceRule.backgroundColor) {
     nextRule.backgroundColor = String(sourceRule.backgroundColor).trim();
   } else if (sourceRule.textColor) {
@@ -660,6 +691,7 @@ function cleanExternalLinkRule(rule) {
     nextRule.icon = String(sourceRule.icon).trim();
   }
   if (sourceRule.textColor) nextRule.textColor = String(sourceRule.textColor).trim();
+  if (sourceRule.applyTextColor === false) nextRule.applyTextColor = false;
   if (sourceRule.backgroundColor) {
     nextRule.backgroundColor = String(sourceRule.backgroundColor).trim();
   } else if (sourceRule.textColor) {
@@ -774,6 +806,7 @@ function cleanPropertyValueRule(rule) {
     nextRule.icon = String(sourceRule.icon).trim();
   }
   if (sourceRule.textColor) nextRule.textColor = String(sourceRule.textColor).trim();
+  if (sourceRule.applyTextColor === false) nextRule.applyTextColor = false;
   if (sourceRule.backgroundColor) {
     nextRule.backgroundColor = String(sourceRule.backgroundColor).trim();
   } else if (sourceRule.textColor) {
@@ -1439,7 +1472,7 @@ class StyleIndex {
   async buildStyleFromRule(rule, targetPath) {
     const icon = rule.icon ? String(rule.icon) : undefined;
     const iconSource = normalizeIconSource(rule);
-    const textColor = rule.textColor ? String(rule.textColor) : undefined;
+    const textColor = shouldRuleApplyTextColor(rule) && rule.textColor ? String(rule.textColor) : undefined;
     const backgroundColor = rule.backgroundColor ? String(rule.backgroundColor) : undefined;
     const fillBackground = rule.fillBackground !== false;
     const iconColorMode = iconSource === 'svg' ? normalizeIconColorMode(rule) : ICON_COLOR_MODE_ORIGINAL;
@@ -3347,13 +3380,12 @@ class RuleEditModal extends Modal {
 
     addIconColorSettings(contentEl, this.rule, () => this.render());
 
-    addHexColorSetting(contentEl, {
-      name: 'Цвет текста',
-      desc: 'Цвет применяется к названию файла/папки и внутренним ссылкам.',
-      rule: this.rule,
-      property: 'textColor',
-      fallback: '#FFFFFF',
-    });
+    addTextColorSettings(
+      contentEl,
+      this.rule,
+      'Цвет применяется к названию файла/папки и внутренним ссылкам.',
+      '#FFFFFF',
+    );
 
     const backgroundSetting = addHexColorSetting(contentEl, {
       name: 'Цвет фона',
@@ -3541,13 +3573,12 @@ class ExternalLinkRuleEditModal extends Modal {
 
     addIconColorSettings(contentEl, this.rule, () => this.render());
 
-    addHexColorSetting(contentEl, {
-      name: 'Цвет текста',
-      desc: 'Цвет применяется к внешним ссылкам с этим префиксом.',
-      rule: this.rule,
-      property: 'textColor',
-      fallback: '#FFFFFF',
-    });
+    addTextColorSettings(
+      contentEl,
+      this.rule,
+      'Цвет применяется к внешним ссылкам с этим префиксом.',
+      '#FFFFFF',
+    );
 
     const backgroundSetting = addHexColorSetting(contentEl, {
       name: 'Цвет фона',
@@ -3799,13 +3830,12 @@ class PropertyValueRuleEditModal extends Modal {
 
     addIconColorSettings(contentEl, this.rule, () => this.render());
 
-    addHexColorSetting(contentEl, {
-      name: 'Цвет текста',
-      desc: 'Цвет применяется к совпавшему значению свойства.',
-      rule: this.rule,
-      property: 'textColor',
-      fallback: '#FFFFFF',
-    });
+    addTextColorSettings(
+      contentEl,
+      this.rule,
+      'Цвет применяется к совпавшему значению свойства.',
+      '#FFFFFF',
+    );
 
     const backgroundSetting = addHexColorSetting(contentEl, {
       name: 'Цвет фона',
@@ -4121,6 +4151,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       normalizeIconColorMode(rule),
       rule.iconColor,
       rule.textColor,
+      rule.applyTextColor === false ? 'не красить текст inherit text no text color' : 'красить текст text color',
       rule.backgroundColor,
       rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
       rule.cascade ? 'каскадно cascade recursive вложенные' : '',
@@ -4137,6 +4168,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       normalizeIconColorMode(rule),
       rule.iconColor,
       rule.textColor,
+      rule.applyTextColor === false ? 'не красить текст inherit text no text color' : 'красить текст text color',
       rule.backgroundColor,
       rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
     ]);
@@ -4154,6 +4186,7 @@ class VaultBadgeStylesSettingTab extends PluginSettingTab {
       normalizeIconColorMode(rule),
       rule.iconColor,
       rule.textColor,
+      rule.applyTextColor === false ? 'не красить текст inherit text no text color' : 'красить текст text color',
       rule.backgroundColor,
       rule.fillBackground === false ? 'без заливки no fill' : 'заливать фон fill background',
     ]);
